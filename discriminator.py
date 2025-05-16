@@ -20,6 +20,9 @@ def load_integer_list(file_path):
     return int_list
 
 def legend(dLosses, gLosses):
+    dLosses = load_integer_list(netPath / "dLosses.list")
+    gLosses = load_integer_list(netPath / "gLosses.list")
+
     plt.figure(figsize=(10,5))
     plt.title("Generator and Discriminator Loss During Training")
     plt.plot(gLosses,label="G")
@@ -54,38 +57,91 @@ dataroot = "data/celeba"
 
 chanels = 3
 
-featuresCount = 32
+gFeaturesCount = 32
+dFeaturesCount = 24
 
 latentSize = 100
 
 imageWidth = 128
-imageHeight = 156
+imageHeight = 128
 
 batch_size = 128
 
 path = "C:\\Users\\PC\\Downloads\\celeba"
 netPath = pathlib.Path(__file__).parent.resolve()
 
+class SkipConnection(torch.nn.Module):
+    def __init__(self, features):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.LazyConvTranspose2d(features, 5, stride = 1, padding=(2, 2)),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(),
+            nn.LazyConvTranspose2d(features, 5, stride = 1, padding=(2, 2)),
+            nn.LazyBatchNorm2d(),
+        )
+    
+    def forward(self, input):
+        return self.model(input) + input
+
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
         self.main = nn.Sequential(
-            nn.LazyConv2d(featuresCount, 6, stride=2, padding=0, bias=False),
-            nn.LeakyReLU(0.2, inplace=False),
+            # nn.LazyConv2d(dFeaturesCount, 6, stride=3, padding=2, bias=False), # 43
+            # nn.LeakyReLU(0.02, inplace=False),
+    
+            # nn.LazyConv2d(dFeaturesCount * 2, kernel_size=6, stride=3, padding=1, bias=False), # 14
+            # nn.LazyBatchNorm2d(),
+            # nn.LeakyReLU(0.02, inplace=False),
+    
+            # nn.LazyConv2d(dFeaturesCount * 4, kernel_size=6, stride=2, padding=(0, 0), bias=False), # 5
+            # nn.LazyBatchNorm2d(),
+            # nn.LeakyReLU(0.02, inplace=False),
+
+            # nn.LazyConv2d(1, kernel_size=5, stride=1, padding=0, bias=False),
+            # nn.Sigmoid()
             
-            nn.LazyConv2d(featuresCount * 2, 6, stride=2, padding=0, bias=False),
+            nn.LazyConv2d(dFeaturesCount, kernel_size=6, stride=2, padding=0, bias=False),
+            nn.LeakyReLU(0.2, inplace=False),
+
+            nn.LazyConv2d(dFeaturesCount * 2, kernel_size=6, stride=2, padding=0, bias=False),
+            nn.LeakyReLU(0.2, inplace=False),
+
+            nn.LazyConv2d(dFeaturesCount * 4, kernel_size=5, stride=2, padding=0, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.2, inplace=False),
 
-            nn.LazyConv2d(featuresCount * 4, kernel_size=(6, 5), stride=2, padding=0, bias=False),
+            nn.LazyConv2d(dFeaturesCount * 8, kernel_size=5, stride=2, padding=0, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.2, inplace=False),
 
-            nn.LazyConv2d(featuresCount * 8, kernel_size=(6, 5), stride=2, padding=0, bias=False),
+            nn.LazyConv2d(1, kernel_size=5, stride=1, padding=0, bias=False),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, input):
+        return self.main(input)
+    
+class Encoder(nn.Module):
+    def __init__(self):
+        super(Encoder, self).__init__()
+        self.main = nn.Sequential(
+            nn.LazyConv2d(gFeaturesCount, kernel_size=6, stride=2, padding=0, bias=False),
+            nn.LeakyReLU(0.2, inplace=False),
+
+            nn.LazyConv2d(gFeaturesCount * 2, kernel_size=6, stride=2, padding=0, bias=False),
+            nn.LeakyReLU(0.2, inplace=False),
+
+            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=5, stride=2, padding=0, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.2, inplace=False),
 
-            nn.LazyConv2d(1, kernel_size=(6, 5), stride=1, padding=0, bias=False),
+            nn.LazyConv2d(gFeaturesCount * 8, kernel_size=5, stride=2, padding=0, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            nn.LazyConv2d(latentSize, kernel_size=5, stride=1, padding=0, bias=False),
             nn.Sigmoid()
         )
         
@@ -96,30 +152,75 @@ class Generator(nn.Module):
     def __init__(self):
         super(Generator, self).__init__()
         self.main = nn.Sequential(
-            nn.LazyConvTranspose2d(featuresCount * 8, kernel_size=(6, 5), stride=1, padding=0, bias=False),
+            nn.LazyConvTranspose2d(gFeaturesCount * 8, kernel_size=(5, 5), stride=1, padding=0, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConvTranspose2d(featuresCount * 4, kernel_size=(6, 5), stride=2, padding=0, bias=False),
+            nn.LazyConvTranspose2d(gFeaturesCount * 4, kernel_size=(5, 5), stride=2, padding=0, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConvTranspose2d(featuresCount * 2, kernel_size=(6, 5), stride=2, padding=0, bias=False),
+            SkipConnection(gFeaturesCount * 4),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            SkipConnection(gFeaturesCount * 4),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            nn.LazyConvTranspose2d(gFeaturesCount * 2, kernel_size=(5, 5), stride=2, padding=0, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConvTranspose2d(featuresCount, 6, stride=2, padding=0, bias=False),
+            SkipConnection(gFeaturesCount * 2),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            SkipConnection(gFeaturesCount * 2),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            nn.LazyConvTranspose2d(gFeaturesCount, kernel_size=6, stride=2, padding=0, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConvTranspose2d(chanels, 6, stride=2, padding=0, output_padding=0, bias=False),
+            SkipConnection(gFeaturesCount),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            SkipConnection(gFeaturesCount),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            SkipConnection(gFeaturesCount),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            SkipConnection(gFeaturesCount),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            nn.LazyConvTranspose2d(chanels, kernel_size=6, stride=2, padding=0, bias=False),
             nn.Tanh()
         )
         
     def forward(self, input):
         return self.main(input)
+    
+class SchedulerParams:
+    ideal_loss = np.log(4)
+    x_min = 0.1 * np.log(4)
+    x_max = 0.1 * np.log(4)
+    h_min = 0.1
+    f_max = 2.0
+    
+scheduler_params = SchedulerParams()
 
-def learn(discriminator, generator):
+def lr_scheduler(loss, ideal_loss, x_min, x_max, h_min=0.1, f_max=2.0):
+  x = np.abs(loss-ideal_loss)
+  f_x = np.clip(np.pow(f_max, x/x_max), 1.0, f_max)
+  h_x = np.clip(np.pow(h_min, x/x_min), h_min, 1.0)
+  return f_x if loss > ideal_loss else h_x
+
+def learn(discriminator, encoder, generator, dLosses, gLosses):
+    #discriminator.load_state_dict(torch.load(netPath / 'discriminator.pth', weights_only=True))
+    #generator.load_state_dict(torch.load(netPath / 'generator.pth', weights_only=True))
+    #dLosses = load_integer_list(netPath / "dLosses.list")
+    #gLosses = load_integer_list(netPath / "gLosses.list")
+    #print(f'loaded from {netPath}')
+
     transform=transforms.Compose([
         transforms.Resize((imageHeight, imageWidth)),
         transforms.CenterCrop((imageHeight, imageWidth)),
@@ -133,37 +234,30 @@ def learn(discriminator, generator):
     discriminatorCriterion = nn.BCELoss()
 
     lr = 0.0001 #😫
-    momentumCoef = 0.2 #beta1
-    decayRate = 0.85 #beta2
+    beta1 = 0.5 #momentumCoef
+    beta2 = 0.999 #decayRate
     ### m = beta1*m + (1-beta1)*dx
     ### cache = beta2*cache + (1-beta2)*(dx**2)
     ### x += - learning_rate * m / (np.sqrt(cache) + eps)
-    discriminatorOpt = torch.optim.Adam(discriminator.parameters(), lr=lr, betas=(momentumCoef, decayRate))
-    generatorOpt = torch.optim.Adam(generator.parameters(), lr=lr, betas=(momentumCoef, decayRate))
+    discriminatorOpt = torch.optim.Adam(discriminator.parameters(), lr=lr, betas=(beta1, beta2))
+    generatorOpt = torch.optim.Adam(generator.parameters(), lr=lr, betas=(beta1, beta2))
 
     cycleConsistentLoss = 0.0
     discriminatorLoss = 0.0
-    
-    gLosses = []
-    dLosses = []
+    smoothed_disc_loss = scheduler_params.ideal_loss
 
-    for epoch in range(10):
+    for epoch in range(300):
         for i, data in enumerate(dataloader):
             inputs = data[0].to(device)
             b_size = inputs.size(0)
             
+            #fakeLabels = torch.pow(torch.rand((b_size,), dtype=torch.float32, device=device, requires_grad=False) / 2, 3)
+            #realLabels = 1 - torch.pow(torch.rand((b_size,), dtype=torch.float32, device=device, requires_grad=False) / 2, 3)
             realLabels = torch.full((b_size,), 1, dtype=torch.float32, device=device, requires_grad=False)
             fakeLabels = torch.full((b_size,), 0, dtype=torch.float32, device=device, requires_grad=False)
 
             noise = torch.randn(b_size, latentSize, 1, 1, device=device)
             generated = generator(noise)
-
-
-            generatorOpt.zero_grad()
-            discriminatorFakeOutputs = discriminator(generated).view(-1)
-            discriminatorGeneratorError = discriminatorCriterion(discriminatorFakeOutputs, realLabels)
-            discriminatorGeneratorError.backward()
-            generatorOpt.step()
 
 
             discriminatorOpt.zero_grad()
@@ -176,27 +270,34 @@ def learn(discriminator, generator):
             discriminatorError.backward()
             discriminatorOpt.step()
 
+            generatorOpt.zero_grad()
+            discriminatorGeneratorOutputs = discriminator(generated).view(-1)
+            discriminatorGeneratorError = discriminatorCriterion(discriminatorGeneratorOutputs, realLabels)
+            discriminatorGeneratorError.backward()
+            generatorOpt.step()
+
 
             dLosses.append(discriminatorError.item())
             gLosses.append(discriminatorGeneratorError.item())
             if i % 100 == 99:
                 print(f'[epoch - {epoch}, {i}/{len(dataloader)}]')
                 #print(f'cycleConsistentLoss: {cycleConsistentLoss / 100:>10.3f}, discriminatorLoss: {discriminatorLoss / 100:<10.3f}')
-                print(f'discriminator real (m/e): {discriminatorRealsOutput.mean():.6f} / {discriminatorRealError:.6f}')
+                print(f'discriminator re al (m/e): {discriminatorRealsOutput.mean():.6f} / {discriminatorRealError:.6f}')
                 print(f'discriminator fake (m/e): {discriminatorFakeOutputs.mean():.6f} / {discriminatorFakeError:.6f}')
-                print(f'discriminatorGenerator (m/e): {discriminatorFakeOutputs.mean():.6f} / {discriminatorGeneratorError:.6f}')
+                print(f'discriminatorGenerator (m/e): {discriminatorGeneratorOutputs.mean():.6f} / {discriminatorGeneratorError:.6f}')
+                #print(f'generator lr: {lr}, discriminator lr: {dynamicLR}')
                 #discriminatorLoss = 0.0
         
-        save_integer_list(dLosses, netPath / "dLosses.list")
-        save_integer_list(gLosses, netPath / "gLosses.list")
-        print(f'losses safed to {netPath}')
+    save_integer_list(dLosses, netPath / "dLosses.list")
+    save_integer_list(gLosses, netPath / "gLosses.list")
+    print(f'losses safed to {netPath}')
 
-        torch.save(discriminator.state_dict(), netPath / 'discriminator.pth')
-        torch.save(generator.state_dict(), netPath / 'generator.pth')
-        print(f'models safed to {netPath}')
+    torch.save(discriminator.state_dict(), netPath / 'discriminator.pth')
+    torch.save(generator.state_dict(), netPath / 'generator.pth')
+    print(f'models safed to {netPath}')
 
-def showup(discriminator, generator):
-    discriminator.load_state_dict(torch.load(netPath / 'discriminator.pth', weights_only=True))
+
+def showup(generator):
     generator.load_state_dict(torch.load(netPath / 'generator.pth', weights_only=True))
     print(f'loaded from {netPath}')
 
@@ -210,25 +311,26 @@ if __name__ == '__main__':
     discriminator.to(device)
     discriminator.apply(weights_init)
 
+    encoder = Encoder()
+    encoder.to(device)
+    encoder.apply(weights_init)
+
     generator = Generator()
     generator.to(device)
     generator.apply(weights_init)
+    
+    gLosses = []
+    dLosses = []
 
-    #summary(discriminator, input_size=(batch_size, 3, imageHeight, imageWidth))
-    #summary(generator, input_size=(batch_size, latentSize, 1, 1))
-    #exit()
-
-    discriminator.load_state_dict(torch.load(netPath / 'discriminator.pth', weights_only=True))
-    generator.load_state_dict(torch.load(netPath / 'generator.pth', weights_only=True))
-    print(f'loaded from {netPath}')
+    summary(discriminator, input_size=(batch_size, 3, imageHeight, imageWidth))
+    summary(generator, input_size=(batch_size, latentSize, 1, 1))
+    exit()
 
     train = 0
     
     if train == 0:
-        learn(discriminator, generator)
+        learn(discriminator, encoder, generator, dLosses, gLosses)
     elif train == 1:
-        dLosses = load_integer_list(netPath / "dLosses.list")
-        gLosses = load_integer_list(netPath / "gLosses.list")
         legend(dLosses, gLosses)
     else:
-        showup(discriminator, generator)
+        showup(generator)
