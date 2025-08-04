@@ -1,1 +1,3 @@
-print(123)
+import torch
+
+print(torch.rand(10))
