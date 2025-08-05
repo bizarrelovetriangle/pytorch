@@ -23,12 +23,13 @@ dFeaturesCount = 64
 
 latentSize = 100
 
-imageWidth = 160
-imageHeight = 160
+imageWidth = 80
+imageHeight = 80
 
 batch_size = 128
 
-path = Path("/home/rrasulov/training_data")
+alignDataSetPath = Path("/home/rrasulov/training_data/align_dataset")
+unalignDataSetPath = Path("/home/rrasulov/training_data/unalign_dataset")
 #modelsPath = pathlib.Path(__file__).parent.resolve()
 runDataPath = Path("/home/rrasulov/run_data")
 modelsPath = "models"
@@ -48,6 +49,36 @@ class SkipConnection(torch.nn.Module):
     def forward(self, input):
         return self.model(input) + input
 
+class Discriminator(nn.Module):
+    def __init__(self):
+        super(Discriminator, self).__init__()
+        self.main = nn.Sequential(
+            nn.LazyConv2d(dFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LeakyReLU(0.2, inplace=False),
+
+            nn.LazyConv2d(dFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.2, inplace=False),
+
+            nn.LazyConv2d(dFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.2, inplace=False),
+
+            nn.LazyConv2d(dFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.2, inplace=False),
+            
+            nn.LazyConv2d(dFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.2, inplace=False),
+
+            nn.LazyConv2d(1, kernel_size=5, stride=1, padding=0, bias=False),
+            nn.Sigmoid()
+        )
+        
+    def forward(self, input):
+        return self.main(input)
+    
 class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
@@ -76,8 +107,8 @@ class Encoder(nn.Module):
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
             
-            SkipConnection(gFeaturesCount * 8, 0.02),
-            nn.LeakyReLU(0.02),
+            #SkipConnection(gFeaturesCount * 8, 0.02),
+            #nn.LeakyReLU(0.02),
             
             nn.LazyConv2d(latentSize, kernel_size=5, stride=1, padding=0, bias=False),
             nn.Sigmoid()
@@ -86,43 +117,6 @@ class Encoder(nn.Module):
     def forward(self, input):
         return self.main(input)
 
-class Discriminator(nn.Module):
-    def __init__(self):
-        super(Discriminator, self).__init__()
-        self.main = nn.Sequential(
-            #SkipConnection(chanels, 0.2),
-            #SkipConnection(chanels, 0.2),
-            #SkipConnection(chanels, 0.2),
-            #SkipConnection(chanels, 0.2),
-            #SkipConnection(chanels, 0.2),
-            #nn.LeakyReLU(0.2),
-
-            nn.LazyConv2d(dFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LeakyReLU(0.2, inplace=False),
-
-            nn.LazyConv2d(dFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
-
-            nn.LazyConv2d(dFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
-
-            nn.LazyConv2d(dFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
-            
-            nn.LazyConv2d(dFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
-
-            nn.LazyConv2d(1, kernel_size=5, stride=1, padding=0, bias=False),
-            nn.Sigmoid()
-        )
-        
-    def forward(self, input):
-        return self.main(input)
-    
 class Generator(nn.Module):
     def __init__(self):
         super(Generator, self).__init__()
@@ -131,8 +125,8 @@ class Generator(nn.Module):
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
             
-            SkipConnection(gFeaturesCount * 8, 0.02),
-            nn.LeakyReLU(0.02),
+            #SkipConnection(gFeaturesCount * 8, 0.02),
+            #nn.LeakyReLU(0.02),
 
             nn.LazyConvTranspose2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
@@ -169,11 +163,11 @@ def lr_scheduler(loss, ideal_loss, x_min, x_max, h_min=0.1, f_max=2.0):
   return f_x if loss > ideal_loss else h_x
 
 def learn(discriminator, encoder, generator, dLosses, gLosses):
-    #discriminator.load_state_dict(torch.load(modelsPath / 'discriminator.pth', weights_only=True))
-    #generator.load_state_dict(torch.load(modelsPath / 'generator.pth', weights_only=True))
-    #dLosses = load_integer_list(modelsPath / "dLosses.list")
-    #gLosses = load_integer_list(modelsPath / "gLosses.list")
-    #print(f'loaded from {modelsPath}')
+    #discriminator.load_state_dict(torch.load(modelLoadPath / 'discriminator.pth', weights_only=True))
+    #generator.load_state_dict(torch.load(modelLoadPath / 'generator.pth', weights_only=True))
+    #dLosses = load_integer_list(modelLoadPath / "dLosses.list")
+    #gLosses = load_integer_list(modelLoadPath / "gLosses.list")
+    #print(f'loaded from {modelLoadPath}')
 
     discriminator.to(device)
     discriminator.apply(Common.weights_init)
@@ -196,7 +190,7 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
         transforms.CenterCrop((imageHeight, imageWidth)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    dataset = torchvision.datasets.ImageFolder(root=path, transform=transform)
+    dataset = torchvision.datasets.ImageFolder(root=alignDataSetPath, transform=transform)
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
                                              shuffle=True, num_workers=2)
@@ -226,7 +220,7 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
             encoded = encoder(inputs)
             generated = generator(encoded)
 
-            cycleConsistentError = torch.abs(inputs - generated).sum()
+            cycleConsistentError = torch.abs(torch.square(inputs - generated)).sum()
             cycleConsistentError.backward()
 
             encoderOpt.step()
@@ -310,11 +304,12 @@ if __name__ == '__main__':
     gLosses = []
     dLosses = []
 
-    #summary(generator, input_size=(batch_size, latentSize, 1, 1))
-    #summary(discriminator, input_size=(batch_size, 3, imageHeight, imageWidth))
-    #exit()
+    summary(discriminator, input_size=(batch_size, 3, imageHeight, imageWidth))
+    summary(encoder, input_size=(batch_size, 3, imageHeight, imageWidth))
+    summary(generator, input_size=(batch_size, latentSize, 1, 1))
+    exit()
 
-    train = 2
+    train = 0
     
     if train == 0:
         learn(discriminator, encoder, generator, dLosses, gLosses)
