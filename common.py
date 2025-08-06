@@ -69,8 +69,8 @@ class Common:
         print(f'loaded from {loadPath}')
 
         transform=transforms.Compose([
-            transforms.Resize((160, 160)),
-            transforms.CenterCrop((160, 160)),
+            transforms.Resize((142, 142)),
+            transforms.CenterCrop((142, 142)),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
         dataset = torchvision.datasets.ImageFolder(root=imagesPath, transform=transform)
