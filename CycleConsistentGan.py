@@ -18,13 +18,12 @@ dataroot = "data/celeba"
 
 chanels = 3
 
-gFeaturesCount = 64
-dFeaturesCount = 64
+gFeaturesCount = 32
+dFeaturesCount = 32
 
-latentSize = 100
+latentSize = 124
 
-imageWidth = 95
-imageHeight = 95
+imageSize = 128
 
 batch_size = 128
 
@@ -49,24 +48,36 @@ class SkipConnection(torch.nn.Module):
     def forward(self, input):
         return self.model(input) + input
 
+class Interpolate(torch.nn.Module):
+    def __init__(self, size, mode):
+            super().__init__()
+            self.size = size
+            self.mode = mode
+
+    def forward(self, input):
+        return nn.functional.interpolate(input, size=self.size, mode=self.mode)
+
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
         self.main = nn.Sequential(
             nn.LazyConv2d(dFeaturesCount, kernel_size=5, stride=2, padding=1, bias=False),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.1, inplace=False),
+
+            SkipConnection(gFeaturesCount, 0.02),
+            nn.LeakyReLU(0.1),
 
             nn.LazyConv2d(dFeaturesCount * 2, kernel_size=5, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.1, inplace=False),
 
             nn.LazyConv2d(dFeaturesCount * 4, kernel_size=5, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.1, inplace=False),
             
             nn.LazyConv2d(dFeaturesCount * 8, kernel_size=5, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.1, inplace=False),
 
             nn.LazyConv2d(1, kernel_size=5, stride=1, padding=0, bias=False),
             nn.Sigmoid()
@@ -79,78 +90,76 @@ class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
         self.main = nn.Sequential(
-            nn.LazyConv2d(gFeaturesCount, kernel_size=5, stride=2, padding=1, bias=False),
-            nn.LeakyReLU(0.02, inplace=False),
-
-            SkipConnection(gFeaturesCount, 0.02),
-            nn.LeakyReLU(0.02),
-
-            nn.LazyConv2d(gFeaturesCount * 2, kernel_size=5, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
 
-            SkipConnection(gFeaturesCount * 2, 0.02),
-            nn.LeakyReLU(0.02),
+            nn.LazyConv2d(gFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=5, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
  
-            SkipConnection(gFeaturesCount * 4, 0.02),
-            nn.LeakyReLU(0.02),
-            
-            nn.LazyConv2d(gFeaturesCount * 8, kernel_size=5, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
-            
-            #SkipConnection(gFeaturesCount * 8, 0.02),
-            #nn.LeakyReLU(0.02),
-            
-            nn.LazyConv2d(latentSize, kernel_size=5, stride=1, padding=0, bias=False),
+        )
+
+        self.final = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(gFeaturesCount * 16 * 4 * 4, latentSize),
             nn.Tanh()
         )
         
     def forward(self, input):
-        return self.main(input)
+        B = input.size(0)
+        x = self.main(input)
+        x = self.final(x)
+        return x
 
 class Generator(nn.Module):
     def __init__(self):
         super(Generator, self).__init__()
         self.main = nn.Sequential(
-            nn.LazyConvTranspose2d(gFeaturesCount * 8, kernel_size=5, stride=1, padding=0, bias=False),
-            nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
-             
-            #SkipConnection(gFeaturesCount * 8, 0.02),
-            #nn.LeakyReLU(0.02),
-            
-            nn.LazyConvTranspose2d(gFeaturesCount * 4, kernel_size=5, stride=2, padding=1, bias=False),
+            nn.LazyConvTranspose2d(gFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
 
-            SkipConnection(gFeaturesCount * 4, 0.02),
-            nn.LeakyReLU(0.02),
-
-            nn.LazyConvTranspose2d(gFeaturesCount * 2, kernel_size=5, stride=2, padding=1, bias=False),
+            nn.LazyConvTranspose2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
 
-            SkipConnection(gFeaturesCount * 2, 0.02),
-            nn.LeakyReLU(0.02),
-
-            nn.LazyConvTranspose2d(gFeaturesCount, kernel_size=5, stride=2, padding=1, bias=False),
+            Interpolate(size=(32, 32), mode='nearest'),
+            nn.LazyConv2d(gFeaturesCount * 2, kernel_size=3, stride=1, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
 
-            SkipConnection(gFeaturesCount, 0.02),
-            nn.LeakyReLU(0.02),
+            Interpolate(size=(64, 64), mode='nearest'),
+            nn.LazyConv2d(gFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConvTranspose2d(chanels, kernel_size=5, stride=2, padding=1, bias=False),
+            Interpolate(size=(128, 128), mode='nearest'),
+            nn.LazyConv2d(gFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            nn.LazyConvTranspose2d(chanels, kernel_size=3, stride=1, padding=1, bias=True),
             nn.Tanh()
         )
-        
+
+        self.project = nn.Linear(latentSize, gFeaturesCount * 16 * 4 * 4, bias=True)
+
     def forward(self, input):
-        return self.main(input)
+        B = input.size(0)
+        x = self.project(input).view(B, gFeaturesCount * 16, 4, 4)
+        return self.main(x)
     
 def lr_scheduler(loss, ideal_loss, x_min, x_max, h_min=0.1, f_max=2.0):
   x = np.abs(loss-ideal_loss)
@@ -182,14 +191,14 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
     intermediateDataPath.mkdir(parents=True, exist_ok=True)
 
     transform=transforms.Compose([
-        transforms.Resize((imageHeight, imageWidth)),
-        transforms.CenterCrop((imageHeight, imageWidth)),
+        transforms.Resize(imageSize),
+        transforms.CenterCrop(imageSize),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     dataset = torchvision.datasets.ImageFolder(root=unalignDataSetPath, transform=transform)
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-                                             shuffle=True, num_workers=2)
+                                             shuffle=False, num_workers=2)
 
     discriminatorCriterion = nn.BCELoss()
 
@@ -201,7 +210,7 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
     ### x += - learning_rate * m / (np.sqrt(cache) + eps)
     discriminatorOpt = torch.optim.Adam(discriminator.parameters(), lr=lr * 0.2, betas=(beta1, beta2))
     generatorOpt = torch.optim.Adam(generator.parameters(), lr=lr, betas=(beta1, beta2))
-    encoderOpt = torch.optim.Adam(encoder.parameters(), lr = lr, betas=(0.5, 0.999))
+    encoderOpt = torch.optim.Adam(encoder.parameters(), lr = lr, betas=(beta1, beta2))
 
     cycleConsistentLoss = 0.0
     discriminatorLoss = 0.0
@@ -209,8 +218,8 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
     for epoch in range(300):
         for i, data in enumerate(dataloader):
             inputs = data[0].to(device)
-            
             b_size = inputs.size(0)
+
             encoder.zero_grad()
             generator.zero_grad()
 
@@ -224,6 +233,7 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
             generatorOpt.step()
 
             cycleConsistentLoss += cycleConsistentError.item()
+
 
             # realLabels = torch.full((b_size,), 1, dtype=torch.float32, device=device, requires_grad=False)
             # fakeLabels = torch.full((b_size,), 0, dtype=torch.float32, device=device, requires_grad=False)
@@ -295,9 +305,9 @@ if __name__ == '__main__':
     gLosses = []
     dLosses = []
 
-    #summary(discriminator, input_size=(batch_size, 3, imageHeight, imageWidth))
-    #summary(encoder, input_size=(batch_size, 3, imageHeight, imageWidth))
-    #summary(generator, input_size=(batch_size, latentSize, 1, 1))
+    #summary(discriminator, input_size=(batch_size, 3, imageSize, imageSize))
+    #summary(encoder, input_size=(batch_size, 3, imageSize, imageSize))
+    #summary(generator, input_size=(batch_size, latentSize))
     #exit()
 
     train = 0
