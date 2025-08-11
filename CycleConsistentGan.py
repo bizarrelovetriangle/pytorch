@@ -60,31 +60,40 @@ class Interpolate(torch.nn.Module):
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
+        
         self.main = nn.Sequential(
-            nn.LazyConv2d(dFeaturesCount, kernel_size=5, stride=2, padding=1, bias=False),
-            nn.LeakyReLU(0.1, inplace=False),
-
-            SkipConnection(gFeaturesCount, 0.02),
-            nn.LeakyReLU(0.1),
-
-            nn.LazyConv2d(dFeaturesCount * 2, kernel_size=5, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.1, inplace=False),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConv2d(dFeaturesCount * 4, kernel_size=5, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.1, inplace=False),
-            
-            nn.LazyConv2d(dFeaturesCount * 8, kernel_size=5, stride=2, padding=1, bias=False),
-            nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.1, inplace=False),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConv2d(1, kernel_size=5, stride=1, padding=0, bias=False),
+            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.02, inplace=False),
+ 
+            nn.LazyConv2d(gFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.02, inplace=False),
+        )
+
+        self.final = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(gFeaturesCount * 16 * 4 * 4, 1),
             nn.Sigmoid()
         )
         
     def forward(self, input):
-        return self.main(input)
+        B = input.size(0)
+        x = self.main(input)
+        x = self.final(x)
+        return x
     
 class Encoder(nn.Module):
     def __init__(self):
