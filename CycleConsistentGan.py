@@ -62,31 +62,31 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         
         self.main = nn.Sequential(
-            nn.LazyConv2d(dFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LeakyReLU(0.2, inplace=False),
-
-            nn.LazyConv2d(dFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConv2d(dFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConv2d(dFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
+            nn.LeakyReLU(0.02, inplace=False),
+
+            nn.LazyConv2d(gFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyBatchNorm2d(),
+            nn.LeakyReLU(0.02, inplace=False),
  
-            nn.LazyConv2d(dFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.2, inplace=False),
-
-            nn.LazyConv2d(1, kernel_size=4, stride=1, padding=0, bias=False),
-            nn.Sigmoid()
+            nn.LeakyReLU(0.02, inplace=False),
         )
 
         self.final = nn.Sequential(
-            nn.Flatten()
+            nn.Flatten(),
+            nn.Linear(gFeaturesCount * 16 * 4 * 4, 1, bias=False),
+            nn.Sigmoid()
         )
         
     def forward(self, input):
@@ -228,14 +228,14 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
             
             realLabels = torch.full((b_size,1), 1, dtype=torch.float32, device=device, requires_grad=False)
             fakeLabels = torch.full((b_size,1), 0, dtype=torch.float32, device=device, requires_grad=False)
-            #noise = torch.randn(b_size, latentSize, device=device, requires_grad=False)
+            noise = torch.randn(b_size, latentSize, device=device, requires_grad=False)
 
             ## Generation
             encoder.zero_grad()
             generator.zero_grad()
-            encoded = encoder(inputs)
-            decoded = generator(encoded)
-            #generated = generator(noise)
+            #encoded = encoder(inputs)
+            #decoded = generator(encoded)
+            generated = generator(noise)
 
             ## Discriminator optimization
             discriminator.zero_grad()
@@ -243,33 +243,33 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
             realDiscriminatorScore = discriminator(inputs)
             realDiscriminatorError = discriminatorCriterion(realDiscriminatorScore, realLabels)
             ## Generated error
-            #generatedDiscriminatorScore = discriminator(generated.detach())
-            #generatedDiscriminatorScoreError = discriminatorCriterion(generatedDiscriminatorScore, fakeLabels)
+            generatedDiscriminatorScore = discriminator(generated.detach())
+            generatedDiscriminatorScoreError = discriminatorCriterion(generatedDiscriminatorScore, fakeLabels)
             ## Decoded error
-            decodedDiscriminatorScore = discriminator(decoded.detach())
-            decodedDiscriminatorScoreError = discriminatorCriterion(decodedDiscriminatorScore, fakeLabels)
+            #decodedDiscriminatorScore = discriminator(decoded.detach())
+            #decodedDiscriminatorScoreError = discriminatorCriterion(decodedDiscriminatorScore, fakeLabels)
             ## Whole error
             #discriminatorError = (realDiscriminatorError + (generatedDiscriminatorScoreError + decodedDiscriminatorScoreError) / 2) / 2
-            discriminatorError = (realDiscriminatorError + decodedDiscriminatorScoreError) / 2
+            discriminatorError = (realDiscriminatorError + generatedDiscriminatorScoreError) / 2
             discriminatorError *= 1
             discriminatorError.backward()
             discriminatorOpt.step()
 
             ## Encoder-Decoder optimization
-            cycleConsistentError = torch.abs(torch.square(inputs - decoded)).sum()
-            cycleConsistentError.backward(retain_graph=True)
+            #cycleConsistentError = torch.abs(torch.square(inputs - decoded)).sum()
+            #cycleConsistentError.backward(retain_graph=True)
 
             ## Generator optimization
             ## Generated error
-            #generatedDiscriminatorScore2 = discriminator(generated)
-            #generatedDiscriminatorScore2Error = discriminatorCriterion(generatedDiscriminatorScore2, realLabels)
+            generatedDiscriminatorScore2 = discriminator(generated)
+            generatedDiscriminatorScore2Error = discriminatorCriterion(generatedDiscriminatorScore2, realLabels)
             ## Decoded error
-            decodedDiscriminatorScore2 = discriminator(decoded)
-            decodedDiscriminatorScore2Error = discriminatorCriterion(decodedDiscriminatorScore2, realLabels)
+            #decodedDiscriminatorScore2 = discriminator(decoded)
+            #decodedDiscriminatorScore2Error = discriminatorCriterion(decodedDiscriminatorScore2, realLabels)
             ## Whole error
             #generatorError = (generatedDiscriminatorScore2Error + decodedDiscriminatorScore2Error) / 2
-            generatorError = decodedDiscriminatorScore2Error
-            generatorError *= 0.5
+            generatorError = generatedDiscriminatorScore2Error
+            generatorError *= 1
             generatorError.backward()
 
             encoderOpt.step()
@@ -280,11 +280,11 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
 
             if i % 100 == 99:
                 print(f'[epoch - {epoch}, {i}/{len(dataloader)}]')
-                print(f'cycle consistent error: {cycleConsistentError.item():>10.3f}')
+                #print(f'cycle consistent error: {cycleConsistentError.item():>10.3f}')
                 print(f'discriminator real (m/e): {realDiscriminatorScore.mean():.6f} / {realDiscriminatorError:.6f}')
-                #print(f'discriminator generated (m/e): {generatedDiscriminatorScore.mean():.6f} / {generatedDiscriminatorScoreError:.6f}')
-                print(f'discriminator decoded (m/e): {decodedDiscriminatorScore.mean():.6f} / {decodedDiscriminatorScoreError:.6f}')
-                #print(f'discriminatorGenerator (m/e): {generatedDiscriminatorScore2.mean():.6f} / {generatedDiscriminatorScore2Error:.6f}')
+                print(f'discriminator generated (m/e): {generatedDiscriminatorScore.mean():.6f} / {generatedDiscriminatorScoreError:.6f}')
+                #print(f'discriminator decoded (m/e): {decodedDiscriminatorScore.mean():.6f} / {decodedDiscriminatorScoreError:.6f}')
+                print(f'discriminatorGenerator (m/e): {generatedDiscriminatorScore2.mean():.6f} / {generatedDiscriminatorScore2Error:.6f}')
 
                 with torch.no_grad():
                     def saveImages(type, images):
@@ -295,8 +295,8 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
         
                     randomImages = generator(torch.randn(8, latentSize, device=device)).detach().cpu() / 2 + 0.5
                     saveImages('rand', randomImages)
-                    autoencoderImages = torch.cat((inputs[:8].cpu(), decoded[:8].detach().cpu()), 0) / 2 +0.5
-                    saveImages('auto', autoencoderImages)
+                    #autoencoderImages = torch.cat((inputs[:8].cpu(), decoded[:8].detach().cpu()), 0) / 2 +0.5
+                    #saveImages('auto', autoencoderImages)
 
         if epoch % 5 == 0:
             Common.save_integer_list(dLosses, currentModelsPath / "dLosses.list")
@@ -324,11 +324,12 @@ if __name__ == '__main__':
     if train == 0:
         learn(discriminator, encoder, generator, dLosses, gLosses)
     elif train == 1:
-        Common.legend(modelLoadPath, dLosses, gLosses)
-    elif train == 2:
         summary(discriminator, input_size=(batch_size, 3, imageSize, imageSize))
         #summary(encoder, input_size=(batch_size, 3, imageSize, imageSize))
         summary(generator, input_size=(batch_size, latentSize))
+    elif train == 2:
+
+        Common.legend(modelLoadPath, dLosses, gLosses)
     else:
         Common.showupGan(Path("/home/rrasulov/nntest"), modelLoadPath, generator, latentSize)
         Common.showupCycleMyData(Path("/home/rrasulov/nntest"), Path("/home/rrasulov/nntest"), modelLoadPath, encoder, generator)
