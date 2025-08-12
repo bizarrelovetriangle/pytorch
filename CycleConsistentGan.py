@@ -62,31 +62,31 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         
         self.main = nn.Sequential(
-            nn.LazyConv2d(gFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LazyConv2d(dFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LeakyReLU(0.2, inplace=False),
 
-            nn.LazyConv2d(gFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(dFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.2, inplace=False),
 
-            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(dFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.2, inplace=False),
 
-            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(dFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.2, inplace=False),
  
-            nn.LazyConv2d(gFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(dFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.2, inplace=False),
+
+            nn.LazyConv2d(1, kernel_size=4, stride=1, padding=0, bias=False),
+            nn.Sigmoid()
         )
 
         self.final = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(gFeaturesCount * 16 * 4 * 4, 1),
-            nn.Sigmoid()
+            nn.Flatten()
         )
         
     def forward(self, input):
@@ -111,7 +111,7 @@ class Encoder(nn.Module):
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
 
-            nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+            nn.LazyConv2d(gFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
             nn.LeakyReLU(0.02, inplace=False),
  
@@ -207,91 +207,96 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
     dataset = torchvision.datasets.ImageFolder(root=unalignDataSetPath, transform=transform)
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-                                             shuffle=False, num_workers=2)
+                                             shuffle=False, num_workers=2, pin_memory=True)
 
     discriminatorCriterion = nn.BCELoss()
 
-    lr = 0.0001 #😫
+    lr = 0.0002 #😫
     beta1 = 0.5 #momentumCoef
     beta2 = 0.999 #decayRate
     ### m = beta1*m + (1-beta1)*dx
     ### cache = beta2*cache + (1-beta2)*(dx**2)
     ### x += - learning_rate * m / (np.sqrt(cache) + eps)
-    discriminatorOpt = torch.optim.Adam(discriminator.parameters(), lr=lr * 0.2, betas=(beta1, beta2))
+    discriminatorOpt = torch.optim.Adam(discriminator.parameters(), lr=lr * 0.5, betas=(beta1, beta2))
     generatorOpt = torch.optim.Adam(generator.parameters(), lr=lr, betas=(beta1, beta2))
     encoderOpt = torch.optim.Adam(encoder.parameters(), lr = lr, betas=(beta1, beta2))
-
-    cycleConsistentLoss = 0.0
-    discriminatorLoss = 0.0
 
     for epoch in range(300):
         for i, data in enumerate(dataloader):
             inputs = data[0].to(device)
             b_size = inputs.size(0)
+            
+            realLabels = torch.full((b_size,1), 1, dtype=torch.float32, device=device, requires_grad=False)
+            fakeLabels = torch.full((b_size,1), 0, dtype=torch.float32, device=device, requires_grad=False)
+            #noise = torch.randn(b_size, latentSize, device=device, requires_grad=False)
 
+            ## Generation
             encoder.zero_grad()
             generator.zero_grad()
-
             encoded = encoder(inputs)
-            generated = generator(encoded)
+            decoded = generator(encoded)
+            #generated = generator(noise)
 
-            cycleConsistentError = torch.abs(torch.square(inputs - generated)).sum()
-            cycleConsistentError.backward()
+            ## Discriminator optimization
+            discriminator.zero_grad()
+            ## Real error
+            realDiscriminatorScore = discriminator(inputs)
+            realDiscriminatorError = discriminatorCriterion(realDiscriminatorScore, realLabels)
+            ## Generated error
+            #generatedDiscriminatorScore = discriminator(generated.detach())
+            #generatedDiscriminatorScoreError = discriminatorCriterion(generatedDiscriminatorScore, fakeLabels)
+            ## Decoded error
+            decodedDiscriminatorScore = discriminator(decoded.detach())
+            decodedDiscriminatorScoreError = discriminatorCriterion(decodedDiscriminatorScore, fakeLabels)
+            ## Whole error
+            #discriminatorError = (realDiscriminatorError + (generatedDiscriminatorScoreError + decodedDiscriminatorScoreError) / 2) / 2
+            discriminatorError = (realDiscriminatorError + decodedDiscriminatorScoreError) / 2
+            discriminatorError *= 1
+            discriminatorError.backward()
+            discriminatorOpt.step()
+
+            ## Encoder-Decoder optimization
+            cycleConsistentError = torch.abs(torch.square(inputs - decoded)).sum()
+            cycleConsistentError.backward(retain_graph=True)
+
+            ## Generator optimization
+            ## Generated error
+            #generatedDiscriminatorScore2 = discriminator(generated)
+            #generatedDiscriminatorScore2Error = discriminatorCriterion(generatedDiscriminatorScore2, realLabels)
+            ## Decoded error
+            decodedDiscriminatorScore2 = discriminator(decoded)
+            decodedDiscriminatorScore2Error = discriminatorCriterion(decodedDiscriminatorScore2, realLabels)
+            ## Whole error
+            #generatorError = (generatedDiscriminatorScore2Error + decodedDiscriminatorScore2Error) / 2
+            generatorError = decodedDiscriminatorScore2Error
+            generatorError *= 0.5
+            generatorError.backward()
 
             encoderOpt.step()
             generatorOpt.step()
 
-            cycleConsistentLoss += cycleConsistentError.item()
-
-
-            # realLabels = torch.full((b_size,), 1, dtype=torch.float32, device=device, requires_grad=False)
-            # fakeLabels = torch.full((b_size,), 0, dtype=torch.float32, device=device, requires_grad=False)
-
-            # noise = torch.randn(b_size, latentSize, 1, 1, device=device)
-            # generated = generator(noise)
-
-            # discriminatorOpt.zero_grad()
-            # discriminatorRealsOutput = discriminator(inputs).view(-1)
-            # discriminatorRealError = discriminatorCriterion(discriminatorRealsOutput, realLabels)
-
-            # discriminatorFakeOutputs = discriminator(generated.detach()).view(-1)
-            # discriminatorFakeError = discriminatorCriterion(discriminatorFakeOutputs, fakeLabels)
-
-            # discriminatorError = (discriminatorRealError + discriminatorFakeError)
-            # discriminatorError.backward()
-            # discriminatorOpt.step()
-
-            # generatorOpt.zero_grad()
-            # discriminatorGeneratorOutputs = discriminator(generated).view(-1)
-            # discriminatorGeneratorError = discriminatorCriterion(discriminatorGeneratorOutputs, realLabels)
-            # discriminatorGeneratorError.backward()
-            # generatorOpt.step()
-
-            # dLosses.append(discriminatorError.item())
-            # gLosses.append(discriminatorGeneratorError.item())
+            dLosses.append(discriminatorError.item())
+            gLosses.append(generatorError.item())
 
             if i % 100 == 99:
                 print(f'[epoch - {epoch}, {i}/{len(dataloader)}]')
-                print(f'cycleConsistentLoss: {cycleConsistentLoss / 100:>10.3f}, discriminatorLoss: {discriminatorLoss / 100:<10.3f}')
-                #print(f'discriminator real (m/e): {discriminatorRealsOutput.mean():.6f} / {discriminatorRealError:.6f}')
-                #print(f'discriminator fake (m/e): {discriminatorFakeOutputs.mean():.6f} / {discriminatorFakeError:.6f}')
-                #print(f'discriminatorGenerator (m/e): {discriminatorGeneratorOutputs.mean():.6f} / {discriminatorGeneratorError:.6f}')
-
-                discriminatorLoss = 0.0
-                cycleConsistentLoss = 0.0
+                print(f'cycle consistent error: {cycleConsistentError.item():>10.3f}')
+                print(f'discriminator real (m/e): {realDiscriminatorScore.mean():.6f} / {realDiscriminatorError:.6f}')
+                #print(f'discriminator generated (m/e): {generatedDiscriminatorScore.mean():.6f} / {generatedDiscriminatorScoreError:.6f}')
+                print(f'discriminator decoded (m/e): {decodedDiscriminatorScore.mean():.6f} / {decodedDiscriminatorScoreError:.6f}')
+                #print(f'discriminatorGenerator (m/e): {generatedDiscriminatorScore2.mean():.6f} / {generatedDiscriminatorScore2Error:.6f}')
 
                 with torch.no_grad():
-                    #randomImagesPath = intermediateDataPath / f'{epoch}_{i}_rand.png' 
-                    #randomImages = generator(torch.randn(8, latentSize, 1, 1, device=device)).detach().cpu() / 2 + 0.5
-                    #randomImageCollection = torchvision.utils.make_grid(randomImages, 4)
-                    #torchvision.utils.save_image(randomImageCollection, randomImagesPath)
-                    #print(f'epoch {epoch} is over, intermediate images are stored as \'{randomImagesPath}\'')
+                    def saveImages(type, images):
+                        imagesPath = intermediateDataPath / f'{epoch}_{i}_{type}.png' 
+                        imageCollection = torchvision.utils.make_grid(images, 4)
+                        torchvision.utils.save_image(imageCollection, imagesPath)
+                        print(f'epoch {epoch} is over, intermediate images are stored as \'{imagesPath}\'')
         
-                    autoencoderImagesPath = intermediateDataPath / f'{epoch}_{i}_auto.png' 
-                    autoencoderImages = torch.cat((inputs[:8].cpu(), generated[:8].detach().cpu()), 0) / 2 +0.5
-                    autoencoderImageCollection = torchvision.utils.make_grid(autoencoderImages, 4)
-                    torchvision.utils.save_image(autoencoderImageCollection, autoencoderImagesPath)
-                    print(f'epoch {epoch} is over, intermediate images are stored as \'{autoencoderImagesPath}\'')
+                    randomImages = generator(torch.randn(8, latentSize, device=device)).detach().cpu() / 2 + 0.5
+                    saveImages('rand', randomImages)
+                    autoencoderImages = torch.cat((inputs[:8].cpu(), decoded[:8].detach().cpu()), 0) / 2 +0.5
+                    saveImages('auto', autoencoderImages)
 
         if epoch % 5 == 0:
             Common.save_integer_list(dLosses, currentModelsPath / "dLosses.list")
@@ -314,17 +319,16 @@ if __name__ == '__main__':
     gLosses = []
     dLosses = []
 
-    #summary(discriminator, input_size=(batch_size, 3, imageSize, imageSize))
-    #summary(encoder, input_size=(batch_size, 3, imageSize, imageSize))
-    #summary(generator, input_size=(batch_size, latentSize))
-    #exit()
-
     train = 0
     
     if train == 0:
         learn(discriminator, encoder, generator, dLosses, gLosses)
     elif train == 1:
-        Common.legend(dLosses, gLosses)
+        Common.legend(modelLoadPath, dLosses, gLosses)
+    elif train == 2:
+        summary(discriminator, input_size=(batch_size, 3, imageSize, imageSize))
+        #summary(encoder, input_size=(batch_size, 3, imageSize, imageSize))
+        summary(generator, input_size=(batch_size, latentSize))
     else:
         Common.showupGan(Path("/home/rrasulov/nntest"), modelLoadPath, generator, latentSize)
         Common.showupCycleMyData(Path("/home/rrasulov/nntest"), Path("/home/rrasulov/nntest"), modelLoadPath, encoder, generator)
