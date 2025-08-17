@@ -33,20 +33,7 @@ unalignDataSetPath = Path("/home/rrasulov/training_data/unalign_dataset")
 runDataPath = Path("/home/rrasulov/run_data")
 modelsPath = "models"
 intermediatePath = "intermediete_images"
-modelLoadPath = Path("/home/rrasulov/run_data/20250805-185549/models")
-
-class SkipConnection(torch.nn.Module):
-    def __init__(self, features, slope = 0.01):
-        super().__init__()
-        self.model = nn.Sequential(
-            nn.LazyConv2d(features, 3, stride=1, padding=1),
-            nn.LeakyReLU(slope),
-            nn.LazyConv2d(features, 3, stride=1, padding=1),
-            nn.LazyBatchNorm2d(),
-        )
-    
-    def forward(self, input):
-        return self.model(input) + input
+modelLoadPath = Path("/home/rrasulov/run_data/20250815-122215/models")
 
 class Interpolate(torch.nn.Module):
     def __init__(self, size, mode):
@@ -62,31 +49,32 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         
         self.main = nn.Sequential(
+            nn.LazyConv2d(gFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+
             nn.LazyConv2d(gFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
-            nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.2, inplace=True),
 
             nn.LazyConv2d(gFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.2, inplace=True),
 
             nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.2, inplace=True),
 
             nn.LazyConv2d(gFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.2, inplace=True),
  
             nn.LazyConv2d(gFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
         self.final = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(gFeaturesCount * 16 * 4 * 4, 1, bias=False),
-            nn.Sigmoid()
+            nn.Linear(gFeaturesCount * 16 * 4 * 4, 1, bias=True),
         )
         
     def forward(self, input):
@@ -101,23 +89,23 @@ class Encoder(nn.Module):
         self.main = nn.Sequential(
             nn.LazyConv2d(gFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.02, inplace=True),
 
             nn.LazyConv2d(gFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.02, inplace=True),
 
             nn.LazyConv2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.02, inplace=True),
 
             nn.LazyConv2d(gFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.02, inplace=True),
  
             nn.LazyConv2d(gFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.02, inplace=True),
         )
 
         self.final = nn.Sequential(
@@ -131,33 +119,33 @@ class Encoder(nn.Module):
         x = self.main(input)
         x = self.final(x)
         return x
-
+    
 class Generator(nn.Module):
     def __init__(self):
         super(Generator, self).__init__()
         self.main = nn.Sequential(
             nn.LazyConvTranspose2d(gFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.02, inplace=True),
 
             nn.LazyConvTranspose2d(gFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.02, inplace=True),
 
             Interpolate(size=(32, 32), mode='nearest'),
             nn.LazyConv2d(gFeaturesCount * 2, kernel_size=3, stride=1, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.02, inplace=True),
 
             Interpolate(size=(64, 64), mode='nearest'),
             nn.LazyConv2d(gFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
-
+            nn.LeakyReLU(0.02, inplace=True),
+            
             Interpolate(size=(128, 128), mode='nearest'),
             nn.LazyConv2d(gFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
             nn.LazyBatchNorm2d(),
-            nn.LeakyReLU(0.02, inplace=False),
+            nn.LeakyReLU(0.02, inplace=True),
 
             nn.LazyConvTranspose2d(chanels, kernel_size=3, stride=1, padding=1, bias=True),
             nn.Tanh()
@@ -170,19 +158,7 @@ class Generator(nn.Module):
         x = self.project(input).view(B, gFeaturesCount * 16, 4, 4)
         return self.main(x)
     
-def lr_scheduler(loss, ideal_loss, x_min, x_max, h_min=0.1, f_max=2.0):
-  x = np.abs(loss-ideal_loss)
-  f_x = np.clip(np.pow(f_max, x/x_max), 1.0, f_max)
-  h_x = np.clip(np.pow(h_min, x/x_min), h_min, 1.0)
-  return f_x if loss > ideal_loss else h_x
-
 def learn(discriminator, encoder, generator, dLosses, gLosses):
-    #discriminator.load_state_dict(torch.load(modelLoadPath / 'discriminator.pth', weights_only=True))
-    #generator.load_state_dict(torch.load(modelLoadPath / 'generator.pth', weights_only=True))
-    #dLosses = load_integer_list(modelLoadPath / "dLosses.list")
-    #gLosses = load_integer_list(modelLoadPath / "gLosses.list")
-    #print(f'loaded from {modelLoadPath}')
-
     discriminator.to(device)
     discriminator.apply(Common.weights_init)
 
@@ -191,6 +167,12 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
 
     generator.to(device)
     generator.apply(Common.weights_init)
+    
+    #discriminator.load_state_dict(torch.load(modelLoadPath / 'discriminator.pth', weights_only=True), strict=False)
+    #generator.load_state_dict(torch.load(modelLoadPath / 'generator.pth', weights_only=True), strict=False)
+    #dLosses = Common.load_integer_list(modelLoadPath / "dLosses.list")
+    #gLosses = Common.load_integer_list(modelLoadPath / "gLosses.list")
+    print(f'loaded from {modelLoadPath}')
     
     runName = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     currentRunPath = runDataPath / runName
@@ -207,9 +189,9 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
     dataset = torchvision.datasets.ImageFolder(root=unalignDataSetPath, transform=transform)
 
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-                                             shuffle=False, num_workers=2, pin_memory=True)
+                                            shuffle=False, num_workers=2, pin_memory=True)
 
-    discriminatorCriterion = nn.BCELoss()
+    discriminatorCriterion = nn.BCEWithLogitsLoss()
 
     lr = 0.0002 #😫
     beta1 = 0.5 #momentumCoef
@@ -231,8 +213,8 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
             noise = torch.randn(b_size, latentSize, device=device, requires_grad=False)
 
             ## Generation
-            encoder.zero_grad()
-            generator.zero_grad()
+            #encoder.zero_grad()
+            #generator.zero_grad()
             #encoded = encoder(inputs)
             #decoded = generator(encoded)
             generated = generator(noise)
@@ -252,39 +234,46 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
             #discriminatorError = (realDiscriminatorError + (generatedDiscriminatorScoreError + decodedDiscriminatorScoreError) / 2) / 2
             discriminatorError = (realDiscriminatorError + generatedDiscriminatorScoreError) / 2
             discriminatorError *= 1
-            discriminatorError.backward()
+            #discriminator.zero_grad()
+            discriminatorError.backward(retain_graph=True)
             discriminatorOpt.step()
+
+
+            ## Generator optimization
+            ## Generated error
+            generator.zero_grad()
+            generatedDiscriminatorScore2 = discriminator(generated)
+            generatedDiscriminatorScore2Error = discriminatorCriterion(generatedDiscriminatorScore2, realLabels)
+            ### Decoded error
+            ##decodedDiscriminatorScore2 = discriminator(decoded)
+            ##decodedDiscriminatorScore2Error = discriminatorCriterion(decodedDiscriminatorScore2, realLabels)
+            ### Whole error
+            #generatorError = (generatedDiscriminatorScore2Error + decodedDiscriminatorScore2Error) / 2
+            generatorError = generatedDiscriminatorScore2Error
+            generatorError *= 1
+            generator.zero_grad()
+            generatorError.backward(retain_graph=True)
+            generatorOpt.step()
+
+            #encoderOpt.zero_grad()
 
             ## Encoder-Decoder optimization
             #cycleConsistentError = torch.abs(torch.square(inputs - decoded)).sum()
             #cycleConsistentError.backward(retain_graph=True)
 
-            ## Generator optimization
-            ## Generated error
-            generatedDiscriminatorScore2 = discriminator(generated)
-            generatedDiscriminatorScore2Error = discriminatorCriterion(generatedDiscriminatorScore2, realLabels)
-            ## Decoded error
-            #decodedDiscriminatorScore2 = discriminator(decoded)
-            #decodedDiscriminatorScore2Error = discriminatorCriterion(decodedDiscriminatorScore2, realLabels)
-            ## Whole error
-            #generatorError = (generatedDiscriminatorScore2Error + decodedDiscriminatorScore2Error) / 2
-            generatorError = generatedDiscriminatorScore2Error
-            generatorError *= 1
-            generatorError.backward()
-
-            encoderOpt.step()
-            generatorOpt.step()
+            #encoderOpt.step()
 
             dLosses.append(discriminatorError.item())
-            gLosses.append(generatorError.item())
+            #gLosses.append(generatorError.item())
 
             if i % 100 == 99:
                 print(f'[epoch - {epoch}, {i}/{len(dataloader)}]')
                 #print(f'cycle consistent error: {cycleConsistentError.item():>10.3f}')
-                print(f'discriminator real (m/e): {realDiscriminatorScore.mean():.6f} / {realDiscriminatorError:.6f}')
-                print(f'discriminator generated (m/e): {generatedDiscriminatorScore.mean():.6f} / {generatedDiscriminatorScoreError:.6f}')
+                print(f'discriminator real (m/e): {torch.nn.functional.sigmoid(realDiscriminatorScore).mean():.6f} / {realDiscriminatorError:.6f}')
+                print(f'discriminator generated (m/e): {torch.nn.functional.sigmoid(generatedDiscriminatorScore).mean():.6f} / {generatedDiscriminatorScoreError:.6f}')
+                print(f'discriminator generated 2 (m/e): {torch.nn.functional.sigmoid(generatedDiscriminatorScore2).mean():.6f} / {generatedDiscriminatorScore2Error:.6f}')
                 #print(f'discriminator decoded (m/e): {decodedDiscriminatorScore.mean():.6f} / {decodedDiscriminatorScoreError:.6f}')
-                print(f'discriminatorGenerator (m/e): {generatedDiscriminatorScore2.mean():.6f} / {generatedDiscriminatorScore2Error:.6f}')
+                #print(f'discriminator decoded 2 (m/e): {decodedDiscriminatorScore2.mean():.6f} / {decodedDiscriminatorScore2Error:.6f}')
 
                 with torch.no_grad():
                     def saveImages(type, images):
@@ -304,7 +293,6 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
             print(f'losses safed to {currentModelsPath}')
             torch.save(discriminator.state_dict(), currentModelsPath / 'discriminator.pth')
             torch.save(generator.state_dict(), currentModelsPath / 'generator.pth')
-            torch.save(encoder.state_dict(), currentModelsPath / 'encoder.pth')
             print(f'models safed to {currentModelsPath}')
 
 if __name__ == '__main__':
@@ -325,11 +313,9 @@ if __name__ == '__main__':
         learn(discriminator, encoder, generator, dLosses, gLosses)
     elif train == 1:
         summary(discriminator, input_size=(batch_size, 3, imageSize, imageSize))
-        #summary(encoder, input_size=(batch_size, 3, imageSize, imageSize))
         summary(generator, input_size=(batch_size, latentSize))
     elif train == 2:
-
-        Common.legend(modelLoadPath, dLosses, gLosses)
+        Common.legend(Path("/home/rrasulov/nntest"), modelLoadPath, dLosses, gLosses)
     else:
         Common.showupGan(Path("/home/rrasulov/nntest"), modelLoadPath, generator, latentSize)
-        Common.showupCycleMyData(Path("/home/rrasulov/nntest"), Path("/home/rrasulov/nntest"), modelLoadPath, encoder, generator)
+        #Common.showupCycleMyData(Path("/home/rrasulov/nntest"), Path("/home/rrasulov/nntest"), modelLoadPath, generator)

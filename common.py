@@ -23,7 +23,7 @@ class Common:
             int_list = list(struct.unpack(f'{list_length}f', f.read(4 * list_length)))
         return int_list
 
-    def legend(path, dLosses, gLosses):
+    def legend(outputPath, path, dLosses, gLosses):
         dLosses = Common.load_integer_list(path / "dLosses.list")
         gLosses = Common.load_integer_list(path / "gLosses.list")
 
@@ -35,6 +35,7 @@ class Common:
         plt.ylabel("Loss")
         plt.legend()
         plt.show()
+        plt.savefig(outputPath / "legent.png")
 
     def imshow(img, unnormalize = True, transpose = True):
         if unnormalize:
@@ -45,7 +46,7 @@ class Common:
         plt.axis('off')
         plt.style.use('dark_background')
         plt.imshow(npimg)
-        plt.show()
+        plt.save()
 
     def weights_init(m):
         classname = m.__class__.__name__
@@ -59,7 +60,7 @@ class Common:
         generator.load_state_dict(torch.load(loadPath / 'generator.pth', weights_only=True))
         print(f'loaded from {loadPath}')
 
-        output = generator(torch.randn(16, latentSize, 1, 1))
+        output = generator(torch.randn(16, latentSize))
         images = torchvision.utils.make_grid(output.detach().cpu(), 8) / 2 + 0.5
         torchvision.utils.save_image(images, outputPath / "zShowupGanResult.png")
 
