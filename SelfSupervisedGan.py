@@ -66,16 +66,22 @@ class Discriminator(nn.Module):
 			nn.LeakyReLU(0.2, inplace=True),
 		)
 
-		self.final = nn.Sequential(
+		self.likelihoodFinal = nn.Sequential(
 			nn.Flatten(),
 			nn.Linear(disFeaturesCount * 16 * 4 * 4, 1, bias=True),
+		)
+		
+		self.rotationsFinal = nn.Sequential(
+			nn.Flatten(),
+			nn.Linear(disFeaturesCount * 16 * 4 * 4, 4, bias=True),
 		)
 
 	def forward(self, input):
 		B = input.size(0)
 		x = self.main(input)
-		x = self.final(x)
-		return x
+		likelihood = self.likelihoodFinal(x)
+		rotations = self.rotationsFinal(x)
+		return likelihood, rotations
 
 class Generator(nn.Module):
 	def __init__(self):
@@ -145,7 +151,8 @@ def learn(discriminator, generator, dLosses, gLosses):
 	dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
 										  shuffle=False, num_workers=2, pin_memory=True)
 
-	discriminatorCriterion = nn.BCEWithLogitsLoss()
+	discriminatorLikelihoodCriterion = nn.BCEWithLogitsLoss()
+	discriminatorRotationCriterion = nn.CrossEntropyLoss()
 
 	lr = 0.0002 #😫
 	beta1 = 0.5 #momentumCoef
@@ -169,26 +176,68 @@ def learn(discriminator, generator, dLosses, gLosses):
 
 			## Discriminator optimization
 			discriminator.zero_grad()
-			realDiscriminatorScore = discriminator(inputs)
-			realDiscriminatorError = discriminatorCriterion(realDiscriminatorScore, realLabels)
-			generatedDiscriminatorScore = discriminator(generated.detach())
-			generatedDiscriminatorScoreError = discriminatorCriterion(generatedDiscriminatorScore, fakeLabels)
 
-			discriminatorError = (realDiscriminatorError + generatedDiscriminatorScoreError) / 2
-			discriminatorError.backward(retain_graph=True)
+			# Discriminator likelihood error
+			realDiscriminatorScore, _ = discriminator(inputs)
+			realDiscriminatorError = discriminatorLikelihoodCriterion(realDiscriminatorScore, realLabels)
+			generatedDiscriminatorScore, _ = discriminator(generated.detach())
+			generatedDiscriminatorScoreError = discriminatorLikelihoodCriterion(generatedDiscriminatorScore, fakeLabels)
+
+			discriminatorLikelihoodError = (realDiscriminatorError + generatedDiscriminatorScoreError) / 2
+			discriminatorLikelihoodError.backward(retain_graph=True)
+
+			# Discriminator rotating error
+			transposedInput = torch.transpose(inputs, 2, 3)
+			rotatedInputs = [inputs,
+					torch.flip(transposedInput, [3]),
+					torch.flip(inputs, [2, 3]),
+					torch.flip(transposedInput, [2])]
+			discriminatorRotationsError = torch.tensor(0, device=device, dtype=torch.float64)
+
+			for r in range(4):
+				flattenedRotatedLabels = torch.full((b_size,), r, device=device, requires_grad=False)
+				rotatedLabels = torch.nn.functional.one_hot(flattenedRotatedLabels, 4).float()
+				_, rotationScores = discriminator(rotatedInputs[r].detach())
+				discriminatorRotationsError += discriminatorRotationCriterion(rotationScores, rotatedLabels)
+				#imageCollection = torchvision.utils.make_grid(rotatedInputs[r][:16], 4)
+				#torchvision.utils.save_image(imageCollection, intermediateDataPath / f'{r}_rotated.png')
+
+			discriminatorRotationsError.backward(retain_graph=True)
+
 			discriminatorOpt.step()
 
-			## Generator optimization
+
+			## Generator likelihood optimization
 			generator.zero_grad()
-			generatedDiscriminatorScore2 = discriminator(generated)
-			generatedDiscriminatorScore2Error = discriminatorCriterion(generatedDiscriminatorScore2, realLabels)
+			generatedDiscriminatorScore2, _ = discriminator(generated)
+			generatedDiscriminatorScore2Error = discriminatorLikelihoodCriterion(generatedDiscriminatorScore2, realLabels)
 			
 			generatorError = generatedDiscriminatorScore2Error
 			generatorError.backward(retain_graph=True)
+
+			# Generator rotating error
+			transposedGenerated = torch.transpose(inputs, 2, 3)
+			rotatedGenerateds = [inputs,
+					torch.flip(transposedGenerated, [3]),
+					torch.flip(inputs, [2, 3]),
+					torch.flip(transposedGenerated, [2])]
+			generatorRotationsError = torch.tensor(0, device=device, dtype=torch.float64)
+
+			for r in range(4):
+				flattenedRotatedLabels = torch.full((b_size,), r, device=device, requires_grad=False)
+				rotatedLabels = torch.nn.functional.one_hot(flattenedRotatedLabels, 4).float()
+				_, rotationScores = discriminator(rotatedGenerateds[r])
+				generatorRotationsError += discriminatorRotationCriterion(rotationScores, rotatedLabels)
+				#imageCollection = torchvision.utils.make_grid(rotatedGenerateds[r][:16], 4)
+				#torchvision.utils.save_image(imageCollection, intermediateDataPath / f'{r}_rotated.png')
+
+			generatorRotationsError.backward(retain_graph=True)
+
 			generatorOpt.step()
 
-			dLosses.append(discriminatorError.item())
-			gLosses.append(generatorError.item())
+
+			dLosses.append((discriminatorLikelihoodError+discriminatorRotationsError).item())
+			gLosses.append((generatorError+generatorRotationsError).item())
 
 			if i % 100 == 99:
 				print(f'[epoch - {epoch}, {i}/{len(dataloader)}]')
@@ -198,7 +247,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 
 				with torch.no_grad():
 					def saveImages(type, images):
-						imagesPath = intermediateDataPath / f'{epoch}_{i}_{type}.png' 
+						imagesPath = intermediateDataPath / f'{epoch}_{i}_{type}.png'
 						imageCollection = torchvision.utils.make_grid(images, 4)
 						torchvision.utils.save_image(imageCollection, imagesPath)
 						print(f'intermediate images are stored as \'{imagesPath}\'')
