@@ -89,6 +89,15 @@ class Common:
 		torchvision.utils.save_image(images, outputPath / "zShowupCycleMyDataResult.png")
 		print(f'images are stored as \'{outputPath}\'')
 
+	class Interpolate(torch.nn.Module):
+		def __init__(self, size, mode):
+				super().__init__()
+				self.size = size
+				self.mode = mode
+
+		def forward(self, input):
+			return nn.functional.interpolate(input, size=self.size, mode=self.mode)
+
 
 	# def showupCycle():
 	#     encoder = Encoder()
