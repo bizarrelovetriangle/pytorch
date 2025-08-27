@@ -159,7 +159,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 											 shuffle=False, num_workers=2, pin_memory=True)
 
 	likelihoodCriterion = nn.BCEWithLogitsLoss()
-	attributesCriterion = nn.CrossEntropyLoss()
+	attributesCriterion = nn.BCEWithLogitsLoss()
 
 	lr = 0.0002 #😫
 	beta1 = 0.5 #momentumCoef
@@ -174,6 +174,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 		for i, data in enumerate(dataloader):
 			images = data[0].to(device)
 			attributes = data[1].to(device)
+			attributes01 = (attributes + 1) / 2
 			b_size = images.size(0)
 
 			realLabels = torch.full((b_size,1), 1, dtype=torch.float32, device=device, requires_grad=False)
@@ -181,10 +182,8 @@ def learn(discriminator, generator, dLosses, gLosses):
 			noise = torch.randn(b_size, latentSize, device=device, requires_grad=False)
 			generated = generator(noise, attributes)
 
-			## Discriminator optimization
-			discriminator.zero_grad()
-
 			# Discriminator likelihood error
+			discriminator.zero_grad()
 			realDiscriminatorScore, predictedRealAttributes = discriminator(images)
 			realDiscriminatorError = likelihoodCriterion(realDiscriminatorScore, realLabels)
 			generatedDiscriminatorScore, _ = discriminator(generated.detach())
@@ -194,7 +193,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 			discriminatorLikelihoodError.backward(retain_graph=True)
 
 			# Discriminator attributes error
-			discriminatorAttributesError = attributesCriterion(predictedRealAttributes, attributes)
+			discriminatorAttributesError = attributesCriterion(predictedRealAttributes, attributes01)
 			discriminatorAttributesError.backward(retain_graph=True)
 
 			discriminatorOpt.step()
@@ -209,7 +208,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 			generatorError.backward(retain_graph=True)
 
 			# Generator attributes error
-			generatorAttributesError = attributesCriterion(predictedFakeAttributes, attributes)
+			generatorAttributesError = attributesCriterion(predictedFakeAttributes, attributes01)
 			generatorAttributesError.backward(retain_graph=True)
 
 			generatorOpt.step()
@@ -223,6 +222,8 @@ def learn(discriminator, generator, dLosses, gLosses):
 				print(f'discriminator real (m/e): {torch.nn.functional.sigmoid(realDiscriminatorScore).mean():.6f} / {realDiscriminatorError:.6f}')
 				print(f'discriminator generated (m/e): {torch.nn.functional.sigmoid(generatedDiscriminatorScore).mean():.6f} / {generatedDiscriminatorScoreError:.6f}')
 				print(f'discriminator generated 2 (m/e): {torch.nn.functional.sigmoid(generatedDiscriminatorScore2).mean():.6f} / {generatedDiscriminatorScore2Error:.6f}')
+				print(f'discriminatorAttributesError: {discriminatorAttributesError:.6f}')
+				print(f'generatorAttributesError: {generatorAttributesError:.6f}')
 
 				with torch.no_grad():
 					def saveImages(type, images):
