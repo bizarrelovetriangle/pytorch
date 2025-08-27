@@ -21,21 +21,23 @@ dataroot = "data/celeba"
 chanels = 3
 
 disFeaturesCount = 32
-genFeaturesCount = 32
+genFeaturesCount = 42
 
 latentSize = 124
-attributesSize = 40
 
 imageSize = 128
 
 batch_size = 128
 
-#baseTrainingPath = Path("/home/rrasulov")
-baseTrainingPath = Path("E:/NNTrainDirection")
+baseTrainingPath = Path("/home/rrasulov")
+#baseTrainingPath = Path("E:/NNTrainDirection")
 
+attributeFilters = ['Male', 'Big_Lips', 'Chubby', 'Attractive', 'Young']
+attributesSize = len(attributeFilters)
 attributeLabelsPath = baseTrainingPath / Path("training_data/list_attr_celeba.txt")
-alignDataSetPath = baseTrainingPath / Path("training_data/align_dataset")
-unalignDataSetPath = baseTrainingPath / Path("training_data/unalign_dataset")
+
+alignDataSetPath = baseTrainingPath / Path("training_data/align_dataset/img_align_celeba")
+unalignDataSetPath = baseTrainingPath / Path("training_data/unalign_dataset/img_celeba")
 #modelsPath = pathlib.Path(__file__).parent.resolve()
 runDataPath = baseTrainingPath / Path("run_data")
 modelsPath = "models"
@@ -93,32 +95,35 @@ class Generator(nn.Module):
 		self.main = nn.Sequential(
 			nn.LazyConvTranspose2d(genFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
 			nn.LazyBatchNorm2d(),
-			nn.LeakyReLU(0.02, inplace=True),
+			nn.ReLU(inplace=True),
 
 			nn.LazyConvTranspose2d(genFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
 			nn.LazyBatchNorm2d(),
-			nn.LeakyReLU(0.02, inplace=True),
+			nn.ReLU(inplace=True),
 
 			Common.Interpolate(size=(32, 32), mode='nearest'),
 			nn.LazyConv2d(genFeaturesCount * 2, kernel_size=3, stride=1, padding=1, bias=False),
 			nn.LazyBatchNorm2d(),
-			nn.LeakyReLU(0.02, inplace=True),
+			nn.ReLU(inplace=True),
 
 			Common.Interpolate(size=(64, 64), mode='nearest'),
 			nn.LazyConv2d(genFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
 			nn.LazyBatchNorm2d(),
-			nn.LeakyReLU(0.02, inplace=True),
+			nn.ReLU(inplace=True),
 			
 			Common.Interpolate(size=(128, 128), mode='nearest'),
 			nn.LazyConv2d(genFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
 			nn.LazyBatchNorm2d(),
-			nn.LeakyReLU(0.02, inplace=True),
+			nn.ReLU(inplace=True),
 
 			nn.LazyConvTranspose2d(chanels, kernel_size=3, stride=1, padding=1, bias=True),
 			nn.Tanh()
 		)
 
-		self.project = nn.Linear(latentSize + attributesSize, genFeaturesCount * 16 * 4 * 4, bias=True)
+		self.project = nn.Sequential(
+			nn.Linear(latentSize + attributesSize, genFeaturesCount * 16 * 4 * 4, bias=False),
+			nn.LazyBatchNorm1d(),
+		)
 
 	def forward(self, noise, attributes):
 		B = noise.size(0)
@@ -139,7 +144,9 @@ def learn(discriminator, generator, dLosses, gLosses):
 	#gLosses = Common.load_integer_list(modelLoadPath / "gLosses.list")
 	#print(f'loaded from {modelLoadPath}')
 
+	# Male Big_Lips Chubby Attractive Young
 	attributeLabels = pd.read_csv(attributeLabelsPath, sep=r'\s+', header=1)
+	attributeLabels = attributeLabels[attributeFilters]
 
 	runName = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 	currentRunPath = runDataPath / runName
@@ -153,10 +160,10 @@ def learn(discriminator, generator, dLosses, gLosses):
 		transforms.CenterCrop(imageSize),
 		transforms.ToTensor(),
 		transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-	dataset = CelebADataset(unalignDataSetPath / "img_celeba", attributeLabels, transform=transform)
+	dataset = CelebADataset(alignDataSetPath, attributeLabels, transform=transform)
 
 	dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
-											 shuffle=False, num_workers=2, pin_memory=True)
+											 shuffle=True, num_workers=2, pin_memory=True)
 
 	likelihoodCriterion = nn.BCEWithLogitsLoss()
 	attributesCriterion = nn.BCEWithLogitsLoss()
