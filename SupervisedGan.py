@@ -29,8 +29,8 @@ imageSize = 128
 
 batch_size = 128
 
-baseTrainingPath = Path("/home/rrasulov")
-#baseTrainingPath = Path("E:/NNTrainDirection")
+#baseTrainingPath = Path("/home/rrasulov")
+baseTrainingPath = Path("E:/NNTrainDirection")
 
 attributeFilters = ['Male', 'Big_Lips', 'Chubby', 'Attractive', 'Young']
 attributesSize = len(attributeFilters)
@@ -45,30 +45,38 @@ intermediatePath = "intermediete_images"
 modelLoadPath = baseTrainingPath / Path("run_data/20250815-122215/models")
 
 class Discriminator(nn.Module):
-	def __init__(self):
+	def __init__(self, gn_groups=8):
 		super(Discriminator, self).__init__()
-		
+		g = gn_groups
+
 		self.main = nn.Sequential(
-			nn.LazyConv2d(disFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
+			nn.Conv2d(3, disFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
+			Common.SpectralNorm(),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			nn.LazyConv2d(disFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
+			nn.Conv2d(disFeaturesCount, disFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
+			Common.SpectralNorm(),
+			nn.GroupNorm(g, disFeaturesCount),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			nn.LazyConv2d(disFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
-			nn.LazyBatchNorm2d(),
+			nn.Conv2d(disFeaturesCount, disFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
+			Common.SpectralNorm(),
+			nn.GroupNorm(g, disFeaturesCount * 2),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			nn.LazyConv2d(disFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
-			nn.LazyBatchNorm2d(),
+			nn.Conv2d(disFeaturesCount * 2, disFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
+			Common.SpectralNorm(),
+			nn.GroupNorm(g, disFeaturesCount * 4),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			nn.LazyConv2d(disFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
-			nn.LazyBatchNorm2d(),
+			nn.Conv2d(disFeaturesCount * 4, disFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
+			Common.SpectralNorm(),
+			nn.GroupNorm(g, disFeaturesCount * 8),
 			nn.LeakyReLU(0.2, inplace=True),
- 
-			nn.LazyConv2d(disFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False),
-			nn.LazyBatchNorm2d(),
+
+			nn.Conv2d(disFeaturesCount * 8, disFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False),
+			Common.SpectralNorm(),
+			nn.GroupNorm(g, disFeaturesCount * 16),
 			nn.LeakyReLU(0.2, inplace=True),
 		)
 
@@ -76,7 +84,7 @@ class Discriminator(nn.Module):
 			nn.Flatten(),
 			nn.Linear(disFeaturesCount * 16 * 4 * 4, 1, bias=True),
 		)
-		
+
 		self.attributesFinal = nn.Sequential(
 			nn.Flatten(),
 			nn.Linear(disFeaturesCount * 16 * 4 * 4, attributesSize, bias=True),
