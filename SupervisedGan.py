@@ -33,6 +33,7 @@ batch_size = 128
 baseTrainingPath = Path("/home/rrasulov")
 #baseTrainingPath = Path("E:/NNTrainDirection")
 
+attributeFactor = 0.2
 attributeFilters = ['Male', 'Big_Lips', 'Chubby', 'Attractive', 'Young']
 attributesSize = len(attributeFilters)
 attributeLabelsPath = baseTrainingPath / Path("training_data/list_attr_celeba.txt")
@@ -203,7 +204,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 			discriminatorLikelihoodError.backward(retain_graph=True)
 
 			# Discriminator attributes error
-			discriminatorAttributesError = attributesCriterion(predictedRealAttributes, attributes01)
+			discriminatorAttributesError = attributeFactor * attributesCriterion(predictedRealAttributes, attributes01)
 			discriminatorAttributesError.backward(retain_graph=True)
 
 			discriminatorOpt.step()
@@ -218,7 +219,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 			generatorError.backward(retain_graph=True)
 
 			# Generator attributes error
-			generatorAttributesError = attributesCriterion(predictedFakeAttributes, attributes01)
+			generatorAttributesError = attributeFactor * attributesCriterion(predictedFakeAttributes, attributes01)
 			generatorAttributesError.backward(retain_graph=True)
 
 			generatorOpt.step()
