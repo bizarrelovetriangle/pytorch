@@ -14,6 +14,7 @@ from common import SchedulerParams
 from common import Common
 from CelebADataset import CelebADataset
 import pandas as pd
+from torch.nn.utils import spectral_norm
 
 # Root directory for dataset
 dataroot = "data/celeba"
@@ -29,8 +30,8 @@ imageSize = 128
 
 batch_size = 128
 
-#baseTrainingPath = Path("/home/rrasulov")
-baseTrainingPath = Path("E:/NNTrainDirection")
+baseTrainingPath = Path("/home/rrasulov")
+#baseTrainingPath = Path("E:/NNTrainDirection")
 
 attributeFilters = ['Male', 'Big_Lips', 'Chubby', 'Attractive', 'Young']
 attributesSize = len(attributeFilters)
@@ -42,7 +43,7 @@ unalignDataSetPath = baseTrainingPath / Path("training_data/unalign_dataset/img_
 runDataPath = baseTrainingPath / Path("run_data")
 modelsPath = "models"
 intermediatePath = "intermediete_images"
-modelLoadPath = baseTrainingPath / Path("run_data/20250815-122215/models")
+modelLoadPath = baseTrainingPath / Path("run_data/20250828-104044/models")
 
 class Discriminator(nn.Module):
 	def __init__(self, gn_groups=8):
@@ -50,44 +51,38 @@ class Discriminator(nn.Module):
 		g = gn_groups
 
 		self.main = nn.Sequential(
-			nn.Conv2d(3, disFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False),
-			Common.SpectralNorm(),
+			spectral_norm(nn.Conv2d(3, disFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False)),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			nn.Conv2d(disFeaturesCount, disFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False),
-			Common.SpectralNorm(),
+			spectral_norm(nn.Conv2d(disFeaturesCount, disFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False)),
 			nn.GroupNorm(g, disFeaturesCount),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			nn.Conv2d(disFeaturesCount, disFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False),
-			Common.SpectralNorm(),
+			spectral_norm(nn.Conv2d(disFeaturesCount, disFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False)),
 			nn.GroupNorm(g, disFeaturesCount * 2),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			nn.Conv2d(disFeaturesCount * 2, disFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False),
-			Common.SpectralNorm(),
+			spectral_norm(nn.Conv2d(disFeaturesCount * 2, disFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False)),
 			nn.GroupNorm(g, disFeaturesCount * 4),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			nn.Conv2d(disFeaturesCount * 4, disFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False),
-			Common.SpectralNorm(),
+			spectral_norm(nn.Conv2d(disFeaturesCount * 4, disFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False)),
 			nn.GroupNorm(g, disFeaturesCount * 8),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			nn.Conv2d(disFeaturesCount * 8, disFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False),
-			Common.SpectralNorm(),
+			spectral_norm(nn.Conv2d(disFeaturesCount * 8, disFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False)),
 			nn.GroupNorm(g, disFeaturesCount * 16),
 			nn.LeakyReLU(0.2, inplace=True),
 		)
 
 		self.likelihoodFinal = nn.Sequential(
 			nn.Flatten(),
-			nn.Linear(disFeaturesCount * 16 * 4 * 4, 1, bias=True),
+			spectral_norm(nn.Linear(disFeaturesCount * 16 * 4 * 4, 1, bias=True)),
 		)
 
 		self.attributesFinal = nn.Sequential(
 			nn.Flatten(),
-			nn.Linear(disFeaturesCount * 16 * 4 * 4, attributesSize, bias=True),
+			spectral_norm(nn.Linear(disFeaturesCount * 16 * 4 * 4, attributesSize, bias=True)),
 		)
 
 	def forward(self, images):
@@ -146,18 +141,18 @@ def learn(discriminator, generator, dLosses, gLosses):
 	generator.to(device)
 	generator.apply(Common.weights_init)
 	
-	#discriminator.load_state_dict(torch.load(modelLoadPath / 'discriminator.pth', weights_only=True), strict=False)
-	#generator.load_state_dict(torch.load(modelLoadPath / 'generator.pth', weights_only=True), strict=False)
+	discriminator.load_state_dict(torch.load(modelLoadPath / 'discriminator.pth', weights_only=True), strict=False)
+	generator.load_state_dict(torch.load(modelLoadPath / 'generator.pth', weights_only=True), strict=False)
 	#dLosses = Common.load_integer_list(modelLoadPath / "dLosses.list")
 	#gLosses = Common.load_integer_list(modelLoadPath / "gLosses.list")
-	#print(f'loaded from {modelLoadPath}')
+	print(f'loaded from {modelLoadPath}')
 
 	# Male Big_Lips Chubby Attractive Young
 	attributeLabels = pd.read_csv(attributeLabelsPath, sep=r'\s+', header=1)
 	attributeLabels = attributeLabels[attributeFilters]
 
-	runName = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-	currentRunPath = runDataPath / runName
+	runData = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+	currentRunPath = runDataPath / (runData + '_SupervisedGan')
 	currentModelsPath = currentRunPath / modelsPath 
 	intermediateDataPath = currentRunPath / intermediatePath
 	currentModelsPath.mkdir(parents=True, exist_ok=True)
@@ -247,15 +242,22 @@ def learn(discriminator, generator, dLosses, gLosses):
 						torchvision.utils.save_image(imageCollection, imagesPath)
 						print(f'intermediate images are stored as \'{imagesPath}\'')
 		
-					attributedRandomImages = generator(
+					stdRandomImages = generator(
 						torch.randn(8, latentSize, device=device),
 						attributes[:8]).detach().cpu() / 2 + 0.5
-					saveImages('attribrand', attributedRandomImages)
+					saveImages('stdrand', stdRandomImages)
 					
 					fullyRandomImages = generator(
 						torch.randn(8, latentSize, device=device),
 						torch.randn(8, attributesSize, device=device)).detach().cpu() / 2 + 0.5
 					saveImages('fullyrand', fullyRandomImages)
+
+					#attributeFilters = ['Male', 'Big_Lips', 'Chubby', 'Attractive', 'Young']
+					attractiveAttributes = torch.tensor([0., 1., 1., 1., 1.], device=device).repeat(8, 1)
+					attractiveRandomImages = generator(
+						torch.randn(8, latentSize, device=device),
+						attractiveAttributes).detach().cpu() / 2 + 0.5
+					saveImages('attractiverand', attractiveRandomImages)
 
 		if epoch % 5 == 0:
 			Common.save_integer_list(dLosses, currentModelsPath / "dLosses.list")

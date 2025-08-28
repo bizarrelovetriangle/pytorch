@@ -98,13 +98,6 @@ class Common:
 		def forward(self, input):
 			return nn.functional.interpolate(input, size=self.size, mode=self.mode)
 
-	class SpectralNorm(torch.nn.Module):
-		def __init__(self):
-			super().__init__()
-		
-		def forward(self, input):
-			return torch.nn.utils.spectral_norm(input)
-
 	# def showupCycle():
 	#     encoder = Encoder()
 	#     decoder = Generator()

@@ -165,8 +165,8 @@ def learn(discriminator, encoder, generator, dLosses, gLosses):
 	#gLosses = Common.load_integer_list(modelLoadPath / "gLosses.list")
 	print(f'loaded from {modelLoadPath}')
 	
-	runName = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-	currentRunPath = runDataPath / runName
+	runData = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+	currentRunPath = runDataPath / (runData + '_CycleConsistentGan')
 	currentModelsPath = currentRunPath / modelsPath 
 	intermediateDataPath = currentRunPath / intermediatePath
 	currentModelsPath.mkdir(parents=True, exist_ok=True)
