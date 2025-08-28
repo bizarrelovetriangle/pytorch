@@ -21,7 +21,7 @@ dataroot = "data/celeba"
 chanels = 3
 
 disFeaturesCount = 32
-genFeaturesCount = 42
+genFeaturesCount = 32
 
 latentSize = 124
 
