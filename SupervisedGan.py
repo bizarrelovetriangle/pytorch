@@ -33,7 +33,6 @@ batch_size = 128
 baseTrainingPath = Path("/home/rrasulov")
 #baseTrainingPath = Path("E:/NNTrainDirection")
 
-attributeFactor = 0.2
 attributeFilters = ['Male', 'Big_Lips', 'Chubby', 'Attractive', 'Young']
 attributesSize = len(attributeFilters)
 attributeLabelsPath = baseTrainingPath / Path("training_data/list_attr_celeba.txt")
@@ -142,11 +141,11 @@ def learn(discriminator, generator, dLosses, gLosses):
 	generator.to(device)
 	generator.apply(Common.weights_init)
 	
-	discriminator.load_state_dict(torch.load(modelLoadPath / 'discriminator.pth', weights_only=True), strict=False)
-	generator.load_state_dict(torch.load(modelLoadPath / 'generator.pth', weights_only=True), strict=False)
+	#discriminator.load_state_dict(torch.load(modelLoadPath / 'discriminator.pth', weights_only=True), strict=False)
+	#generator.load_state_dict(torch.load(modelLoadPath / 'generator.pth', weights_only=True), strict=False)
 	#dLosses = Common.load_integer_list(modelLoadPath / "dLosses.list")
 	#gLosses = Common.load_integer_list(modelLoadPath / "gLosses.list")
-	print(f'loaded from {modelLoadPath}')
+	#print(f'loaded from {modelLoadPath}')
 
 	# Male Big_Lips Chubby Attractive Young
 	attributeLabels = pd.read_csv(attributeLabelsPath, sep=r'\s+', header=1)
@@ -164,13 +163,12 @@ def learn(discriminator, generator, dLosses, gLosses):
 		transforms.CenterCrop(imageSize),
 		transforms.ToTensor(),
 		transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-	dataset = CelebADataset(alignDataSetPath, attributeLabels, transform=transform)
+	dataset = CelebADataset(unalignDataSetPath, attributeLabels, transform=transform)
 
 	dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
 											 shuffle=True, num_workers=2, pin_memory=True)
 
-	likelihoodCriterion = nn.BCEWithLogitsLoss()
-	attributesCriterion = nn.BCEWithLogitsLoss()
+	attributeFactor = 0.5
 
 	lr = 0.0002 #😫
 	beta1 = 0.5 #momentumCoef
@@ -184,27 +182,22 @@ def learn(discriminator, generator, dLosses, gLosses):
 	for epoch in range(300):
 		for i, data in enumerate(dataloader):
 			images = data[0].to(device)
-			attributes = data[1].to(device)
-			attributes01 = (attributes + 1) / 2
+			attributes = data[1].to(device) # [-0.5, 0.5]
 			b_size = images.size(0)
 
-			realLabels = torch.full((b_size,1), 1, dtype=torch.float32, device=device, requires_grad=False)
-			fakeLabels = torch.full((b_size,1), 0, dtype=torch.float32, device=device, requires_grad=False)
 			noise = torch.randn(b_size, latentSize, device=device, requires_grad=False)
 			generated = generator(noise, attributes)
 
 			# Discriminator likelihood error
 			discriminator.zero_grad()
 			realDiscriminatorScore, predictedRealAttributes = discriminator(images)
-			realDiscriminatorError = likelihoodCriterion(realDiscriminatorScore, realLabels)
 			generatedDiscriminatorScore, _ = discriminator(generated.detach())
-			generatedDiscriminatorScoreError = likelihoodCriterion(generatedDiscriminatorScore, fakeLabels)
 
-			discriminatorLikelihoodError = (realDiscriminatorError + generatedDiscriminatorScoreError) / 2
+			discriminatorLikelihoodError = (generatedDiscriminatorScore - realDiscriminatorScore).mean() / 2
 			discriminatorLikelihoodError.backward(retain_graph=True)
 
 			# Discriminator attributes error
-			discriminatorAttributesError = attributeFactor * attributesCriterion(predictedRealAttributes, attributes01)
+			discriminatorAttributesError = - attributeFactor * (predictedRealAttributes * attributes).mean()
 			discriminatorAttributesError.backward(retain_graph=True)
 
 			discriminatorOpt.step()
@@ -213,13 +206,12 @@ def learn(discriminator, generator, dLosses, gLosses):
 			## Generator likelihood optimization
 			generator.zero_grad()
 			generatedDiscriminatorScore2, predictedFakeAttributes = discriminator(generated)
-			generatedDiscriminatorScore2Error = likelihoodCriterion(generatedDiscriminatorScore2, realLabels)
 			
-			generatorError = generatedDiscriminatorScore2Error
+			generatorError = -generatedDiscriminatorScore2.mean()
 			generatorError.backward(retain_graph=True)
 
 			# Generator attributes error
-			generatorAttributesError = attributeFactor * attributesCriterion(predictedFakeAttributes, attributes01)
+			generatorAttributesError = - attributeFactor * (predictedFakeAttributes * attributes).mean()
 			generatorAttributesError.backward(retain_graph=True)
 
 			generatorOpt.step()
@@ -230,11 +222,11 @@ def learn(discriminator, generator, dLosses, gLosses):
 
 			if i % 100 == 99:
 				print(f'[epoch - {epoch}, {i}/{len(dataloader)}]')
-				print(f'discriminator real (m/e): {torch.nn.functional.sigmoid(realDiscriminatorScore).mean():.6f} / {realDiscriminatorError:.6f}')
-				print(f'discriminator generated (m/e): {torch.nn.functional.sigmoid(generatedDiscriminatorScore).mean():.6f} / {generatedDiscriminatorScoreError:.6f}')
-				print(f'discriminator generated 2 (m/e): {torch.nn.functional.sigmoid(generatedDiscriminatorScore2).mean():.6f} / {generatedDiscriminatorScore2Error:.6f}')
-				print(f'discriminatorAttributesError: {discriminatorAttributesError:.6f}')
-				print(f'generatorAttributesError: {generatorAttributesError:.6f}')
+				print(f'discriminator real (m/e): {realDiscriminatorScore.mean():.6f}')
+				print(f'discriminator fake (m/e): {generatedDiscriminatorScore.mean():.6f}')
+				print(f'discriminator attributes error: {discriminatorAttributesError:.6f}')
+				print(f'updated discriminator fake (m/e): {generatedDiscriminatorScore2.mean():.6f}')
+				print(f'updated discriminator fake attributes: {generatorAttributesError:.6f}')
 
 				with torch.no_grad():
 					def saveImages(type, images):
@@ -243,20 +235,17 @@ def learn(discriminator, generator, dLosses, gLosses):
 						torchvision.utils.save_image(imageCollection, imagesPath)
 						print(f'intermediate images are stored as \'{imagesPath}\'')
 		
-					stdRandomImages = generator(
-						torch.randn(8, latentSize, device=device),
-						attributes[:8]).detach().cpu() / 2 + 0.5
-					saveImages('stdrand', stdRandomImages)
-					
+					noise = torch.randn(8, latentSize, device=device)
+
 					fullyRandomImages = generator(
-						torch.randn(8, latentSize, device=device),
+						noise,
 						torch.randn(8, attributesSize, device=device)).detach().cpu() / 2 + 0.5
 					saveImages('fullyrand', fullyRandomImages)
 
 					#attributeFilters = ['Male', 'Big_Lips', 'Chubby', 'Attractive', 'Young']
 					attractiveAttributes = torch.tensor([0., 1., 1., 1., 1.], device=device).repeat(8, 1)
 					attractiveRandomImages = generator(
-						torch.randn(8, latentSize, device=device),
+						noise,
 						attractiveAttributes).detach().cpu() / 2 + 0.5
 					saveImages('attractiverand', attractiveRandomImages)
 
