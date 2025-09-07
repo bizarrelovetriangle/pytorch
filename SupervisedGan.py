@@ -30,11 +30,16 @@ imageSize = 128
 
 batch_size = 128
 
+n_power_iterations = 3
+
+criticIteraions = 5
+
 baseTrainingPath = Path("/home/rrasulov")
 #baseTrainingPath = Path("E:/NNTrainDirection")
 
 attributeFilters = ['Male', 'Big_Lips', 'Chubby', 'Attractive', 'Young']
 attributesSize = len(attributeFilters)
+attributesLatentSize = 20
 attributeLabelsPath = baseTrainingPath / Path("training_data/list_attr_celeba.txt")
 
 alignDataSetPath = baseTrainingPath / Path("training_data/align_dataset/img_align_celeba")
@@ -51,38 +56,35 @@ class Discriminator(nn.Module):
 		g = gn_groups
 
 		self.main = nn.Sequential(
-			spectral_norm(nn.Conv2d(3, disFeaturesCount, kernel_size=3, stride=1, padding=1, bias=False)),
-			nn.LeakyReLU(0.2, inplace=True),
-
-			spectral_norm(nn.Conv2d(disFeaturesCount, disFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False)),
+			spectral_norm(nn.Conv2d(3, disFeaturesCount, kernel_size=4, stride=2, padding=1, bias=False), n_power_iterations = n_power_iterations),
 			nn.GroupNorm(g, disFeaturesCount),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			spectral_norm(nn.Conv2d(disFeaturesCount, disFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False)),
+			spectral_norm(nn.Conv2d(disFeaturesCount, disFeaturesCount * 2, kernel_size=4, stride=2, padding=1, bias=False), n_power_iterations = n_power_iterations),
 			nn.GroupNorm(g, disFeaturesCount * 2),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			spectral_norm(nn.Conv2d(disFeaturesCount * 2, disFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False)),
+			spectral_norm(nn.Conv2d(disFeaturesCount * 2, disFeaturesCount * 4, kernel_size=4, stride=2, padding=1, bias=False), n_power_iterations = n_power_iterations),
 			nn.GroupNorm(g, disFeaturesCount * 4),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			spectral_norm(nn.Conv2d(disFeaturesCount * 4, disFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False)),
+			spectral_norm(nn.Conv2d(disFeaturesCount * 4, disFeaturesCount * 8, kernel_size=4, stride=2, padding=1, bias=False), n_power_iterations = n_power_iterations),
 			nn.GroupNorm(g, disFeaturesCount * 8),
 			nn.LeakyReLU(0.2, inplace=True),
 
-			spectral_norm(nn.Conv2d(disFeaturesCount * 8, disFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False)),
+			spectral_norm(nn.Conv2d(disFeaturesCount * 8, disFeaturesCount * 16, kernel_size=4, stride=2, padding=1, bias=False), n_power_iterations = n_power_iterations),
 			nn.GroupNorm(g, disFeaturesCount * 16),
 			nn.LeakyReLU(0.2, inplace=True),
 		)
 
 		self.likelihoodFinal = nn.Sequential(
 			nn.Flatten(),
-			spectral_norm(nn.Linear(disFeaturesCount * 16 * 4 * 4, 1, bias=True)),
+			spectral_norm(nn.Linear(disFeaturesCount * 16 * 4 * 4, 1, bias=True), n_power_iterations = n_power_iterations),
 		)
 
 		self.attributesFinal = nn.Sequential(
 			nn.Flatten(),
-			spectral_norm(nn.Linear(disFeaturesCount * 16 * 4 * 4, attributesSize, bias=True)),
+			spectral_norm(nn.Linear(disFeaturesCount * 16 * 4 * 4, attributesSize, bias=True), n_power_iterations = n_power_iterations),
 		)
 
 	def forward(self, images):
@@ -123,17 +125,22 @@ class Generator(nn.Module):
 			nn.Tanh()
 		)
 
+		self.embedding = nn.Parameter(torch.randn(attributesSize, attributesLatentSize, device=device, requires_grad=True))
+
 		self.project = nn.Sequential(
-			nn.Linear(latentSize + attributesSize, genFeaturesCount * 16 * 4 * 4, bias=False),
+			nn.Linear(latentSize + attributesLatentSize, genFeaturesCount * 16 * 4 * 4, bias=False),
 			nn.LazyBatchNorm1d(),
 		)
 
 	def forward(self, noise, attributes):
 		B = noise.size(0)
-		input = torch.cat((noise, attributes), 1)
+		# Multiplying attributes by the corresponding embbeding rows. Adding embedding for +1, substracting for -1
+		# Instead of creating dozends of redundant copies we use smart one to many multiplications
+		embedded = (attributes.unsqueeze(2) * self.embedding.unsqueeze(0)).sum(1)
+		input = torch.cat((noise, embedded), 1)
 		x = self.project(input).view(B, genFeaturesCount * 16, 4, 4)
 		return self.main(x)
-	
+
 def learn(discriminator, generator, dLosses, gLosses):
 	discriminator.to(device)
 	discriminator.apply(Common.weights_init)
@@ -168,7 +175,9 @@ def learn(discriminator, generator, dLosses, gLosses):
 	dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
 											 shuffle=True, num_workers=2, pin_memory=True)
 
-	attributeFactor = 0.5
+	attributeFactor = 1.
+
+	attributesCriterion = nn.BCEWithLogitsLoss()
 
 	lr = 0.0002 #😫
 	beta1 = 0.5 #momentumCoef
@@ -176,42 +185,43 @@ def learn(discriminator, generator, dLosses, gLosses):
 	### m = beta1*m + (1-beta1)*dx
 	### cache = beta2*cache + (1-beta2)*(dx**2)
 	### x += - learning_rate * m / (np.sqrt(cache) + eps)
-	discriminatorOpt = torch.optim.Adam(discriminator.parameters(), lr=lr * 0.5, betas=(beta1, beta2))
+	discriminatorOpt = torch.optim.Adam(discriminator.parameters(), lr=lr, betas=(beta1, beta2))
 	generatorOpt = torch.optim.Adam(generator.parameters(), lr=lr, betas=(beta1, beta2))
 
 	for epoch in range(300):
 		for i, data in enumerate(dataloader):
 			images = data[0].to(device)
-			attributes = data[1].to(device) # [-0.5, 0.5]
+			attributes = data[1].to(device) # [-1, 1]
+			attributes01 = attributes / 2 + 0.5
 			b_size = images.size(0)
 
 			noise = torch.randn(b_size, latentSize, device=device, requires_grad=False)
 			generated = generator(noise, attributes)
 
-			# Discriminator likelihood error
-			discriminator.zero_grad()
-			realDiscriminatorScore, predictedRealAttributes = discriminator(images)
-			generatedDiscriminatorScore, _ = discriminator(generated.detach())
+			for ci in range(criticIteraions):
+				# Discriminator likelihood error
+				discriminator.zero_grad()
+				realDiscriminatorScore, predictedRealAttributes = discriminator(images)
+				generatedDiscriminatorScore, _ = discriminator(generated.detach())
 
-			discriminatorLikelihoodError = (generatedDiscriminatorScore - realDiscriminatorScore).mean() / 2
-			discriminatorLikelihoodError.backward(retain_graph=True)
+				discriminatorLikelihoodError = (generatedDiscriminatorScore - realDiscriminatorScore).mean()
+				discriminatorLikelihoodError.backward(retain_graph=True)
 
-			# Discriminator attributes error
-			discriminatorAttributesError = - attributeFactor * (predictedRealAttributes * attributes).mean()
-			discriminatorAttributesError.backward(retain_graph=True)
+				# Discriminator attributes error
+				discriminatorAttributesError = attributeFactor * attributesCriterion(predictedRealAttributes, attributes01)
+				discriminatorAttributesError.backward(retain_graph=True)
 
-			discriminatorOpt.step()
-
+				discriminatorOpt.step()
 
 			## Generator likelihood optimization
 			generator.zero_grad()
 			generatedDiscriminatorScore2, predictedFakeAttributes = discriminator(generated)
-			
+
 			generatorError = -generatedDiscriminatorScore2.mean()
 			generatorError.backward(retain_graph=True)
 
 			# Generator attributes error
-			generatorAttributesError = - attributeFactor * (predictedFakeAttributes * attributes).mean()
+			generatorAttributesError = attributeFactor * attributesCriterion(predictedFakeAttributes, attributes01)
 			generatorAttributesError.backward(retain_graph=True)
 
 			generatorOpt.step()
@@ -222,10 +232,11 @@ def learn(discriminator, generator, dLosses, gLosses):
 
 			if i % 100 == 99:
 				print(f'[epoch - {epoch}, {i}/{len(dataloader)}]')
-				print(f'discriminator real (m/e): {realDiscriminatorScore.mean():.6f}')
-				print(f'discriminator fake (m/e): {generatedDiscriminatorScore.mean():.6f}')
+				print(f'discriminator real: {realDiscriminatorScore.mean():.6f}')
+				print(f'discriminator fake: {generatedDiscriminatorScore.mean():.6f}')
+				print(f'discriminator whole: {discriminatorLikelihoodError.mean():.6f}')
 				print(f'discriminator attributes error: {discriminatorAttributesError:.6f}')
-				print(f'updated discriminator fake (m/e): {generatedDiscriminatorScore2.mean():.6f}')
+				print(f'updated discriminator fake: {generatedDiscriminatorScore2.mean():.6f}')
 				print(f'updated discriminator fake attributes: {generatorAttributesError:.6f}')
 
 				with torch.no_grad():
@@ -274,7 +285,7 @@ if __name__ == '__main__':
 		learn(discriminator, generator, dLosses, gLosses)
 	elif train == 1:
 		summary(discriminator, input_size=(batch_size, 3, imageSize, imageSize))
-		summary(generator, input_size=(batch_size, latentSize))
+		summary(generator, input_size=[(batch_size, latentSize), (batch_size, attributesSize)])
 	elif train == 2:
 		Common.legend(Path("/home/rrasulov/nntest"), modelLoadPath, dLosses, gLosses)
 	else:
