@@ -32,7 +32,7 @@ batch_size = 128
 
 n_power_iterations = 3
 
-criticIteraions = 5
+criticIteraions = 1
 
 baseTrainingPath = Path("/home/rrasulov")
 #baseTrainingPath = Path("E:/NNTrainDirection")
@@ -196,12 +196,12 @@ def learn(discriminator, generator, dLosses, gLosses):
 			b_size = images.size(0)
 
 			noise = torch.randn(b_size, latentSize, device=device, requires_grad=False)
-			generated = generator(noise, attributes)
 
 			for ci in range(criticIteraions):
 				# Discriminator likelihood error
 				discriminator.zero_grad()
 				realDiscriminatorScore, predictedRealAttributes = discriminator(images)
+				generated = generator(noise, attributes)
 				generatedDiscriminatorScore, _ = discriminator(generated.detach())
 
 				discriminatorLikelihoodError = (generatedDiscriminatorScore - realDiscriminatorScore).mean()
@@ -215,6 +215,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 
 			## Generator likelihood optimization
 			generator.zero_grad()
+			generated = generator(noise, attributes)
 			generatedDiscriminatorScore2, predictedFakeAttributes = discriminator(generated)
 
 			generatorError = -generatedDiscriminatorScore2.mean()
