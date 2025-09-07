@@ -185,7 +185,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 	### m = beta1*m + (1-beta1)*dx
 	### cache = beta2*cache + (1-beta2)*(dx**2)
 	### x += - learning_rate * m / (np.sqrt(cache) + eps)
-	discriminatorOpt = torch.optim.Adam(discriminator.parameters(), lr=lr, betas=(beta1, beta2))
+	discriminatorOpt = torch.optim.Adam(discriminator.parameters(), lr=lr * 0.5, betas=(beta1, beta2))
 	generatorOpt = torch.optim.Adam(generator.parameters(), lr=lr, betas=(beta1, beta2))
 
 	for epoch in range(300):
@@ -204,7 +204,7 @@ def learn(discriminator, generator, dLosses, gLosses):
 				generated = generator(noise, attributes)
 				generatedDiscriminatorScore, _ = discriminator(generated.detach())
 
-				discriminatorLikelihoodError = (generatedDiscriminatorScore - realDiscriminatorScore).mean()
+				discriminatorLikelihoodError = (generatedDiscriminatorScore - realDiscriminatorScore).mean() / 2
 				discriminatorLikelihoodError.backward(retain_graph=True)
 
 				# Discriminator attributes error
